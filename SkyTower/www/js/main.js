@@ -43,6 +43,8 @@
     jumpZone: document.getElementById('ctlJump'),
     base: document.getElementById('stickBase'),
     knob: document.getElementById('stickKnob'),
+    left: document.getElementById('btnLeft'),
+    right: document.getElementById('btnRight'),
     jump: document.getElementById('jumpBtn'),
   });
   G.sim = sim;
@@ -68,6 +70,7 @@
     renderer.scale = 1;
     renderer.setQuality(q === 'auto' ? 'medium' : q);
     scene.quality = S.QUALITY[renderer.level].part;
+    audio.setLite(renderer.level === 'low');
   };
   function adaptQuality(dt) {
     if (S.Save.data.settings.quality !== 'auto') return;
@@ -84,6 +87,7 @@
         renderer.setQuality('low');
         adapt.scale = 1;
         scene.quality = S.QUALITY.low.part;
+        audio.setLite(true);
       } else {
         adapt.scale = Math.max(0.6, adapt.scale - 0.15);
         renderer.setScale(adapt.scale);

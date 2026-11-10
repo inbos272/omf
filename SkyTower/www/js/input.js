@@ -1,4 +1,4 @@
-// Multi-touch controls: floating stick plus jump zone, or a single-thumb mode.
+// Multi-touch controls: left/right buttons plus jump zone, or a single-thumb drag mode.
 (function () {
   'use strict';
   const S = window.SKY;
@@ -18,7 +18,8 @@
       this.ox = 0;
       this.oy = 0;
       this.enabled = false;
-      this.onJumpDown = null;
+      this.btnPtrs = new Map();
+      this.seq = 0;
       this._bind();
     }
 
@@ -43,6 +44,24 @@
       this.els.base.classList.remove('active');
       this.els.base.style.transform = '';
       this.els.jump.classList.remove('down');
+      this.btnPtrs.clear();
+      this._updateButtons();
+    }
+
+    // The whole move half of the screen is touchable; the split sits halfway between the two
+    // buttons, so a thumb can slide from one to the other without lifting.
+    _dirAt(x) {
+      const a = this.els.left.getBoundingClientRect(), b = this.els.right.getBoundingClientRect();
+      return x < (a.right + b.left) / 2 ? -1 : 1;
+    }
+
+    _updateButtons() {
+      let latest = null;
+      for (const p of this.btnPtrs.values()) if (!latest || p.seq > latest.seq) latest = p;
+      const dir = latest ? latest.dir : 0;
+      if (!this.oneHand) this.touchMove = dir;
+      this.els.left.classList.toggle('down', dir < 0);
+      this.els.right.classList.toggle('down', dir > 0);
     }
 
     _knob(x, y) {
@@ -52,7 +71,15 @@
     _bind() {
       const { move, jumpZone } = this.els;
       const down = (e) => {
-        if (!this.enabled || this.movePtr !== null) return;
+        if (!this.enabled) return;
+        if (!this.oneHand) {
+          e.preventDefault();
+          try { move.setPointerCapture(e.pointerId); } catch (err) { /* pointer already gone */ }
+          this.btnPtrs.set(e.pointerId, { dir: this._dirAt(e.clientX), seq: ++this.seq });
+          this._updateButtons();
+          return;
+        }
+        if (this.movePtr !== null) return;
         e.preventDefault();
         this.movePtr = e.pointerId;
         try { move.setPointerCapture(e.pointerId); } catch (err) { /* pointer already gone */ }
@@ -67,6 +94,13 @@
         this._knob(0, 0);
       };
       const moveH = (e) => {
+        const b = this.btnPtrs.get(e.pointerId);
+        if (b) {
+          e.preventDefault();
+          const dir = this._dirAt(e.clientX);
+          if (dir !== b.dir) { b.dir = dir; this._updateButtons(); }
+          return;
+        }
         if (e.pointerId !== this.movePtr) return;
         e.preventDefault();
         const dx = e.clientX - this.ox, dy = e.clientY - this.oy;
@@ -82,6 +116,10 @@
         }
       };
       const up = (e) => {
+        if (this.btnPtrs.delete(e.pointerId)) {
+          this._updateButtons();
+          return;
+        }
         if (e.pointerId !== this.movePtr) return;
         this.movePtr = null;
         this.touchMove = 0;

@@ -8,25 +8,14 @@
     boom: 'fx', pad: 'fx', speed: 'fx', beacon: 'fx', ui: 'fx', reward: 'fx', env: 'fx', fuse: 'fx', buy: 'fx',
   };
 
-  // Each environment gets its own loop: root Hz, chord degrees, scale, and timbre.
-  const MUSIC = [
-    { bpm: 118, root: 130.81, prog: [0, 5, 3, 4], scale: [0, 2, 4, 7, 9], lead: 'triangle', bass: 'triangle', drums: 0.6, motif: [0, 2, 4, 2, 5, 4, 2, 4] },
-    { bpm: 112, root: 123.47, prog: [0, 1, 0, 6], scale: [0, 1, 4, 5, 7, 8], lead: 'sawtooth', bass: 'triangle', drums: 0.7, motif: [0, 3, 2, 3, 4, 3, 2, 1] },
-    { bpm: 92, root: 146.83, prog: [0, 3, 5, 4], scale: [0, 2, 3, 7, 10], lead: 'sine', bass: 'sine', drums: 0.25, motif: [4, 2, 3, 2, 4, 3, 1, 2] },
-    { bpm: 138, root: 110, prog: [0, 0, 6, 5], scale: [0, 3, 5, 6, 7, 10], lead: 'square', bass: 'sawtooth', drums: 1, motif: [0, 0, 2, 0, 3, 2, 4, 3] },
-    { bpm: 100, root: 138.59, prog: [0, 4, 5, 3], scale: [0, 2, 5, 7, 11], lead: 'sine', bass: 'triangle', drums: 0.35, motif: [4, 3, 1, 2, 4, 2, 0, 1] },
-  ];
-  const DEGREE = [0, 2, 4, 5, 7, 9, 11];
-
   class Sound {
     constructor(vol) {
       this.vol = vol;
       this.ctx = null;
       this.bus = {};
       this.musicOn = false;
+      this.music = null;
       this.env = 0;
-      this.step = 0;
-      this.nextT = 0;
       this.timer = null;
       this.danger = 0;
       this.coinChain = 0;
@@ -179,15 +168,24 @@
       }
     }
 
-    // ---- music ----
+    // ---- music (arrangement lives in music.js) ----
     startMusic(env) {
       this.env = env || 0;
-      this.step = 0;
       this.musicOn = true;
       if (this.ctx) this._startClock();
     }
-    setMusicEnv(i) { this.env = i; }
-    setDanger(v) { this.danger = v; }
+    setMusicEnv(i) {
+      this.env = i;
+      if (this.music) this.music.setEnv(i);
+    }
+    setDanger(v) {
+      this.danger = v;
+      if (this.music) this.music.danger = v;
+    }
+    setLite(on) {
+      this.lite = on;
+      if (this.music) this.music.setLite(on);
+    }
     stopMusic() {
       this.musicOn = false;
       clearInterval(this.timer);
@@ -195,83 +193,14 @@
     }
     _startClock() {
       clearInterval(this.timer);
-      this.nextT = this.ctx.currentTime + 0.08;
-      this.timer = setInterval(() => this._tick(), 50);
-    }
-    _note(type, freq, t, dur, vol, cutoff) {
-      const c = this.ctx, o = c.createOscillator(), g = c.createGain();
-      o.type = type;
-      o.frequency.value = freq;
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(vol, t + 0.012);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      let tail = g;
-      if (cutoff) {
-        const f = c.createBiquadFilter();
-        f.type = 'lowpass';
-        f.frequency.value = cutoff;
-        g.connect(f);
-        tail = f;
+      if (!this.music) {
+        this.music = new S.Music(this.ctx, this.musicDuck);
+        this.music.setLite(!!this.lite);
       }
-      o.connect(g);
-      tail.connect(this.musicDuck);
-      o.start(t);
-      o.stop(t + dur + 0.03);
-    }
-    _drum(t, kind, vol) {
-      const c = this.ctx;
-      if (kind === 0) {
-        const o = c.createOscillator(), g = c.createGain();
-        o.frequency.setValueAtTime(140, t);
-        o.frequency.exponentialRampToValueAtTime(45, t + 0.12);
-        g.gain.setValueAtTime(vol, t);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
-        o.connect(g).connect(this.musicDuck);
-        o.start(t);
-        o.stop(t + 0.18);
-      } else {
-        const s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
-        s.buffer = this.noise;
-        f.type = 'highpass';
-        f.frequency.value = kind === 1 ? 7000 : 1800;
-        const d = kind === 1 ? 0.045 : 0.13;
-        g.gain.setValueAtTime(vol, t);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + d);
-        s.connect(f).connect(g).connect(this.musicDuck);
-        s.start(t, Math.random() * 0.8);
-        s.stop(t + d + 0.02);
-      }
-    }
-    _tick() {
-      const ctx = this.ctx;
-      if (!ctx || ctx.state !== 'running') return;
-      if (this.nextT < ctx.currentTime) this.nextT = ctx.currentTime + 0.05;
-      while (this.nextT < ctx.currentTime + 0.22) {
-        const m = MUSIC[this.env];
-        const s16 = (60 / m.bpm / 4) / (1 + this.danger * 0.12);
-        const st = this.step, t = this.nextT;
-        const bar = Math.floor(st / 16) % m.prog.length;
-        const deg = m.prog[bar];
-        const semi = DEGREE[deg];
-        const chord = m.root * Math.pow(2, semi / 12);
-        if (st % 8 === 0 || st % 8 === 6 || (m.drums > 0.8 && st % 2 === 0)) this._note(m.bass, chord / 2, t, s16 * 2.4, 0.22, 700);
-        if (st % 2 === 0) {
-          const arp = [0, 7, 12, 16][(st / 2) % 4];
-          this._note('triangle', chord * Math.pow(2, arp / 12), t, s16 * 2.1, 0.055);
-        }
-        if (st % 4 === 0 || (st % 4 === 3 && bar % 2 === 1)) {
-          const idx = Math.floor(st / 4) % m.motif.length;
-          const sc = m.scale[m.motif[idx] % m.scale.length];
-          this._note(m.lead, m.root * 2 * Math.pow(2, sc / 12), t, s16 * 3.2, m.lead === 'sine' ? 0.13 : 0.058, 2600);
-        }
-        if (m.drums > 0.2) {
-          if (st % 8 === 0) this._drum(t, 0, 0.42 * m.drums);
-          if (st % 8 === 4) this._drum(t, 2, 0.16 * m.drums);
-          if (st % 2 === 0) this._drum(t, 1, 0.055 * m.drums);
-        }
-        this.step = (st + 1) % 64;
-        this.nextT += s16;
-      }
+      this.music.reset(this.ctx.currentTime + 0.08, this.env);
+      this.timer = setInterval(() => {
+        if (this.ctx.state === 'running') this.music.schedule(this.ctx.currentTime + 0.25);
+      }, 50);
     }
   }
   S.Sound = Sound;
