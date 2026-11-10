@@ -90,8 +90,10 @@
   }
 
   // ---------- backgrounds ----------
-  function buildDecor(envId) {
-    const list = [], rng = S.mulberry(envId.length * 4177 + 13);
+  const newAnim = () => ({ sq: 0, sv: 0, phase: 0, yaw: 0, lean: 0, air: 0, blink: 3, blinkT: 0, deadT: 0, customYaw: 0, runAmt: 0, handUp: 0, flail: 0 });
+
+  function buildDecor(envId, seed) {
+    const list = [], rng = S.mulberry(((envId.length * 4177 + 13) ^ (seed || 0)) >>> 0);
     const r = (a, b) => a + (b - a) * rng();
     const put = (mesh, x, y, z, sx, sy, sz, yaw, col, em, gl) =>
       list.push({ mesh, x, y, z, sx, sy, sz, yaw: yaw || 0, col, em: em || 0, gl: gl || 0 });
@@ -208,11 +210,20 @@
       this.skin = S.SKINS[0];
       this.theme = S.THEMES[0];
       this.quality = 1;
-      this.anim = { sq: 0, sv: 0, phase: 0, yaw: 0, lean: 0, air: 0, blink: 3, blinkT: 0, deadT: 0, customYaw: 0 };
+      this.anim = newAnim();
       this.ambT = 0;
       this.emberT = 0;
       this.bestScreen = null;
       this.shakeEnabled = true;
+      this.variant = null;
+      this.alpha = 1;
+      this.tagScreens = [];
+      this._alpha = 1;
+    }
+
+    // Palette for an environment; the first one varies per run (day / sunset / dawn).
+    _envPal(i) {
+      return i === 0 && this.variant ? Object.assign({}, S.ENVS[0], this.variant) : S.ENVS[i];
     }
 
     _copyPal(e) {
@@ -232,7 +243,7 @@
       this.env = i;
       if (instant) {
         this.prevEnv = i;
-        this._copyPal(S.ENVS[i]);
+        this._copyPal(this._envPal(i));
         this.envT = 99;
         this.cam.floorY = this.cam.y;
       } else {
@@ -241,7 +252,12 @@
       }
     }
 
-    resetRun() {
+    resetRun(seed) {
+      if (seed !== undefined) {
+        // New scenery around the tower and a new opening sky every run.
+        this.decor = S.ENVS.map((e) => buildDecor(e.id, seed));
+        this.variant = S.SKY_VARIANTS[(seed >>> 3) % S.SKY_VARIANTS.length];
+      }
       this.fx.clear();
       this.setEnv(0, true);
       const p = this.sim.p;
@@ -282,30 +298,67 @@
       }
     }
 
-    onEvent(name, a, b) {
-      const p = this.sim.p;
-      const an = this.anim;
+    _animOf(body) {
+      if (!body || body.human) return this.anim;
+      return body.anim || (body.anim = newAnim());
+    }
+
+    onEvent(name, a, b, body) {
+      const p = body || this.sim.p, human = !body || body.human;
+      const an = this._animOf(body);
+      const q = human ? 1 : 0.5; // rivals get lighter effects
       switch (name) {
-        case 'jump': an.sv += 13; this.dust(p.x, p.y, 7, [1, 1, 1], 3.2); break;
+        case 'jump': an.sv += 13; this.dust(p.x, p.y, 7 * q, [1, 1, 1], 3.2); break;
+        case 'airjump':
+          an.sv += 11;
+          this.burst(p.x, p.y + 0.2, 16 * q, 5.5, 0.4, 0.5, 0.05, [1, 1, 1], 0.9, 2, true);
+          break;
         case 'land': {
           const imp = clamp(b / 30, 0.15, 1);
           an.sv -= 8 + imp * 16;
           const col = a.type === 0 ? this.theme.a : TYPE_COL[a.type];
-          this.dust(p.x, p.y, 7 + Math.round(imp * 8), col, 3 + imp * 5);
-          if (a.type === T.ICE) this.burst(p.x, p.y + 0.1, 8, 4.5, 0.4, 0.2, 0.05, [0.85, 0.97, 1], 0.9, 12, true);
-          if (imp > 0.75) this.cam.shake = Math.max(this.cam.shake, 0.18);
+          this.dust(p.x, p.y, (7 + Math.round(imp * 8)) * q, col, 3 + imp * 5);
+          if (a.type === T.ICE && human) this.burst(p.x, p.y + 0.1, 8, 4.5, 0.4, 0.2, 0.05, [0.85, 0.97, 1], 0.9, 12, true);
+          if (imp > 0.75 && human) this.cam.shake = Math.max(this.cam.shake, 0.18);
           break;
         }
-        case 'coin': this.burst(a.x, a.y, 9, 5.2, 0.42, 0.34, 0.05, [1, 0.86, 0.3], 0.95, 7, true); break;
+        case 'coin': this.burst(a.x, a.y, 9 * q, 5.2, 0.42, 0.34, 0.05, [1, 0.86, 0.3], 0.95, 7, true); break;
         case 'pad':
           an.sv += 18;
-          this.burst(a.x, a.y + 0.2, 22, 8.4, 0.55, 0.42, 0.08, TYPE_COL[2], 0.95, 12, true);
-          this.dust(p.x, p.y, 12, TYPE_COL[2], 8);
+          this.burst(a.x, a.y + 0.2, 22 * q, 8.4, 0.55, 0.42, 0.08, TYPE_COL[2], 0.95, 12, true);
+          this.dust(p.x, p.y, 12 * q, TYPE_COL[2], 8);
           break;
         case 'speed':
-          this.burst(p.x, p.y + 0.4, 18, 8, 0.45, 0.4, 0.06, TYPE_COL[4], 0.95, 0, true);
-          this.cam.kick = 1;
+          this.burst(p.x, p.y + 0.4, 18 * q, 8, 0.45, 0.4, 0.06, TYPE_COL[4], 0.95, 0, true);
+          if (human) this.cam.kick = 1;
           break;
+        case 'shield':
+          an.sv += 14;
+          this.burst(p.x, p.y + 0.6, 40 * q, 13, 0.8, 0.6, 0.1, [0.5, 0.9, 1], 1, 4, true);
+          if (human) {
+            this.flash = Math.max(this.flash, 0.4);
+            this.flashC = [0.6, 0.9, 1];
+            this.cam.shake = Math.max(this.cam.shake, 0.5);
+          }
+          break;
+        case 'bump': {
+          // a and body are the two rivals that collided, b is the impulse
+          const mx = a.x + S.wrapD(body.x - a.x) / 2, my = (a.y + body.y) / 2 + 0.75;
+          this.burst(mx, my, 6 + Math.min(10, b), 6, 0.35, 0.45, 0.05, [1, 0.95, 0.6], 1, 4, true);
+          this._animOf(a).sv -= 6;
+          an.sv -= 6;
+          if (a.human || body.human) this.cam.shake = Math.max(this.cam.shake, Math.min(0.45, b * 0.04));
+          break;
+        }
+        case 'stomp': {
+          // a stomped on body
+          const under = this._animOf(body);
+          under.sv -= 16;
+          this._animOf(a).sv += 12;
+          this.burst(body.x, body.y + 1.35, 14, 6, 0.4, 0.45, 0.06, [1, 1, 1], 1, 3, true);
+          if (a.human || body.human) this.cam.shake = Math.max(this.cam.shake, 0.3);
+          break;
+        }
         case 'crumble': this.burst(a.x, a.y - 0.2, 10, 2.6, 0.5, 0.3, 0.1, TYPE_COL[3], 0.9, 16, false); break;
         case 'collapse':
           for (let i = 0; i < 6; i++) this.burst(a.x + (Math.random() - 0.5) * a.hw * 2, a.y - 0.4, 4, 3.6, 0.8, 0.5, 0.15, TYPE_COL[3], 0.95, 20, false);
@@ -324,10 +377,12 @@
           this.flashC = [0.7, 0.95, 1];
           break;
         case 'dead':
-          this.burst(p.x, this.sim.lavaY + 0.3, 70, 16, 1, 1, 0.14, [1, 0.5, 0.1], 1, 18, true);
-          this.flash = 0.6;
-          this.flashC = [1, 0.55, 0.15];
-          this.cam.shake = 1;
+          this.burst(p.x, this.sim.lavaY + 0.3, 70 * q, 16, 1, 1, 0.14, [1, 0.5, 0.1], 1, 18, true);
+          if (human) {
+            this.flash = 0.6;
+            this.flashC = [1, 0.55, 0.15];
+            this.cam.shake = 1;
+          }
           break;
       }
     }
@@ -344,10 +399,11 @@
     _part(mesh, x, y, z, sx, sy, sz, c, em, gl, roll, yaw) {
       trs(L, x, y, z, yaw || 0, roll || 0, sx, sy, sz);
       mul(m, B, L);
-      this.r.rigid(mesh, m, c[0], c[1], c[2], em || 0, gl || 0);
+      this.r.rigid(mesh, m, c[0], c[1], c[2], em || 0, gl || 0, this._alpha);
     }
 
-    drawCharacter(skin, px, py, pz, yaw, st) {
+    drawCharacter(skin, px, py, pz, yaw, st, alpha) {
+      this._alpha = alpha === undefined ? 1 : alpha;
       const sq = clamp(st.sq, -0.42, 0.5);
       const sy = (1 + sq) * 1.14, sxz = (1 - sq * 0.55) * 1.14;
       trs(B, px, py, pz, yaw, st.lean, sxz, sy, sxz);
@@ -531,7 +587,7 @@
       // Environment crossfade
       if (this.envT < 3) {
         this.envT += dt;
-        const k = clamp(this.envT / 2.4, 0, 1), e = k * k * (3 - 2 * k), to = S.ENVS[this.env], from = this.envFrom, pal = this.pal;
+        const k = clamp(this.envT / 2.4, 0, 1), e = k * k * (3 - 2 * k), to = this._envPal(this.env), from = this.envFrom, pal = this.pal;
         for (const key of ['top', 'mid', 'hor', 'sun', 'fog', 'hemiS', 'hemiG', 'light', 'colA', 'colB', 'fogR'])
           for (let i = 0; i < pal[key].length; i++) pal[key][i] = lerp(from[key][i], to[key][i], e);
         pal.stars = lerp(from.stars, to.stars, e);
@@ -588,7 +644,8 @@
 
       this._platforms(oy, th, time);
       this._pickups(oy, th, time, opts);
-      this._drawPlayer(dt, ix, iy, oy, th, opts);
+      this.alpha = alpha;
+      this._drawBodies(dt, ix, iy, oy, th, opts);
       this._decor(oy);
       this._ambient(dt, th);
 
@@ -708,8 +765,25 @@
       }
     }
 
-    _drawPlayer(dt, ix, iy, oy, th0, opts) {
-      const sim = this.sim, p = sim.p, st = this.anim;
+    _drawBodies(dt, ix, iy, oy, th0, opts) {
+      const sim = this.sim, r = this.r, tags = this.tagScreens;
+      tags.length = 0;
+      for (const b of sim.bodies) {
+        if (b.human) {
+          this._drawBody(dt, b, this.anim, ix, iy, oy, opts, opts.skin || this.skin, 1);
+          continue;
+        }
+        const bx = b.px + S.wrapD(b.x - b.px) * this.alpha, by = b.py + (b.y - b.py) * this.alpha;
+        this._drawBody(dt, b, this._animOf(b), bx, by, oy, opts, b.skin, 0.55);
+        const th = bx / R;
+        const front = Math.abs(wrapAngle(th - th0)) < 1.45;
+        const pr = !b.dead && front ? r.project(this.view, Math.sin(th) * R, by - oy + 2.25, Math.cos(th) * R) : null;
+        tags.push({ id: b.id, x: pr ? pr[0] : 0, y: pr ? pr[1] : 0, vis: !!pr && pr[2] > 0 && pr[0] > -0.1 && pr[0] < 1.1 && pr[1] > -0.1 && pr[1] < 1.1 });
+      }
+    }
+
+    _drawBody(dt, p, st, ix, iy, oy, opts, skin, alpha) {
+      const human = p.human;
       if (dt > 0) {
         // Substepped so the squash spring stays stable during frame-rate dips.
         const ks = 190, cs = 15, n = Math.ceil(dt / 0.008), h = dt / n;
@@ -732,24 +806,29 @@
       st.blinkT = Math.max(0, st.blinkT - dt);
       if (st.blink <= 0) { st.blink = 1.8 + Math.random() * 3; st.blinkT = 0.11; }
 
-      const skin = opts.skin || this.skin;
-      if (sim.dead) {
+      if (p.dead) {
         st.deadT += dt;
         if (st.deadT > 0.55) return;
       }
       const th = ix / R;
       const sn = Math.sin(th), cs = Math.cos(th);
       let yaw = th + st.yaw;
-      if (opts.camMode === 'custom' || opts.camMode === 'theme') {
+      if (human && (opts.camMode === 'custom' || opts.camMode === 'theme')) {
         st.customYaw += dt;
         yaw = th + Math.sin(st.customYaw * 0.8) * 0.45 + (opts.dragYaw || 0);
       } else if (opts.camMode === 'menu') {
         yaw = th + Math.sin(this.time * 0.8) * 0.3;
       }
-      const sink = sim.dead ? st.deadT * 1.6 : 0;
-      this.drawCharacter(skin, sn * R, iy - oy - sink, cs * R, yaw, st);
+      const sink = p.dead ? st.deadT * 1.6 : 0;
+      this.drawCharacter(skin, sn * R, iy - oy - sink, cs * R, yaw, st, alpha);
+      this._alpha = 1;
+      if (p.shields > 0 && !p.dead && opts.camMode === 'play') {
+        const pulse = 1 + Math.sin(this.time * 5 + p.id) * 0.04;
+        trs(m, sn * R, iy - oy + 0.75, cs * R, 0, 0, 1.05 * pulse, 1.12 * pulse, 1.05 * pulse);
+        this.r.rigid(M.SPHERE, m, 0.45, 0.85, 1, 0.9, 0.8, 0.2);
+      }
 
-      if (dt > 0 && !sim.dead && opts.camMode === 'play') {
+      if (human && dt > 0 && !p.dead && opts.camMode === 'play') {
         const tc = skin.trail;
         const fast = p.boost > 0;
         if (fast || Math.abs(p.vy) > 15) {

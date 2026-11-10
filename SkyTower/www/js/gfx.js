@@ -38,7 +38,7 @@ vec3 a=vec3(r0.x,r1.x,r2.x),b=vec3(r0.y,r1.y,r2.y),c=vec3(r0.z,r1.z,r2.z);
 vN=a*aNor.x/dot(a,a)+b*aNor.y/dot(b,b)+c*aNor.z/dot(c,c);vW=w;vC=iCol;vE=iExt;gl_Position=uVP*vec4(w,1.);}`;
   const RIGID_FS = HEAD + LIT + `
 in vec3 vN,vW;in vec4 vC,vE;out vec4 o;
-void main(){vec3 N=normalize(vN);o=vec4(lit(vC.rgb,N,vW,vE.x,vC.a),1.);}`;
+void main(){vec3 N=normalize(vN);o=vec4(lit(vC.rgb,N,vW,vE.x,vC.a),vE.y);}`;
 
   const PLAT_VS = HEAD + `
 layout(location=0) in vec3 aPos;layout(location=1) in vec3 aNor;layout(location=2) in vec2 aUv;
@@ -376,7 +376,12 @@ o=vec4(c,1.);}`;
         lathe([[0, -0.1], [0.72, -0.1], [0.82, -0.17], [1, -0.1], [1, 0.1], [0.82, 0.17], [0.72, 0.1], [0, 0.1]], 22, false, true),
         lathe([[0, -1], [0.72, -0.15], [0.72, 0.15], [0, 1]], 6, true),
       ];
-      this.buckets = meshes.map((m) => this._bucket(this._mesh(m)));
+      const ms = meshes.map((m) => this._mesh(m));
+      this.buckets = ms.map((m) => this._bucket(m));
+      // Translucent rivals: "ghosts" get a depth prepass so overlapping parts blend once;
+      // "glass" (shield bubbles) blends without one so what is inside stays visible.
+      this.ghosts = ms.map((m) => this._bucket(m));
+      this.glass = ms.map((m) => this._bucket(m));
       this.slab = this._mesh(slab());
       this.strip = this._mesh(strip(8));
       this.quad = this._mesh({ v: [0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1], i: [0, 1, 2, 1, 3, 2] });
@@ -553,13 +558,60 @@ o=vec4(c,1.);}`;
     }
 
     // ---- per-frame submission ----
-    rigid(meshId, m, r, g, b, em, gloss) {
-      const k = this.buckets[meshId];
+    rigid(meshId, m, r, g, b, em, gloss, alpha) {
+      const a = alpha === undefined ? 1 : alpha;
+      const k = a >= 1 ? this.buckets[meshId] : a > 0.3 ? this.ghosts[meshId] : this.glass[meshId];
       if (k.n >= INST_MAX) return;
       const d = k.data, o = k.n++ * INST_F;
       for (let i = 0; i < 12; i++) d[o + i] = m[i];
       d[o + 12] = r; d[o + 13] = g; d[o + 14] = b; d[o + 15] = em;
-      d[o + 16] = gloss; d[o + 17] = 0; d[o + 18] = 0; d[o + 19] = 0;
+      d[o + 16] = gloss; d[o + 17] = a; d[o + 18] = 0; d[o + 19] = 0;
+    }
+
+    _drawSet(set) {
+      const gl = this.gl;
+      for (const k of set) {
+        if (!k.n) continue;
+        gl.bindVertexArray(k.vao);
+        gl.drawElementsInstanced(gl.TRIANGLES, k.mesh.n, gl.UNSIGNED_SHORT, 0, k.n);
+      }
+    }
+
+    _upload(set) {
+      const gl = this.gl;
+      let n = 0;
+      for (const k of set) {
+        if (!k.n) continue;
+        gl.bindBuffer(gl.ARRAY_BUFFER, k.buf);
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, k.data, 0, k.n * INST_F);
+        n += k.n;
+      }
+      return n;
+    }
+
+    _drawTranslucent(F) {
+      const gl = this.gl, rp = this.P.rigid;
+      const ng = this._upload(this.ghosts), nx = this._upload(this.glass);
+      if (!ng && !nx) return;
+      gl.useProgram(rp.p);
+      this._lit(rp, F);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      if (ng) {
+        gl.disable(gl.BLEND);
+        gl.colorMask(false, false, false, false);
+        this._drawSet(this.ghosts);
+        gl.colorMask(true, true, true, true);
+        gl.enable(gl.BLEND);
+        gl.depthMask(false);
+        this._drawSet(this.ghosts);
+      }
+      if (nx) {
+        gl.depthMask(false);
+        this._drawSet(this.glass);
+      }
+      gl.depthMask(true);
+      gl.disable(gl.BLEND);
     }
 
     plat(th, hw, y, type, scale, tilt, flash, seed) {
@@ -682,6 +734,8 @@ o=vec4(c,1.);}`;
 
     _clearSubmits() {
       for (const k of this.buckets) k.n = 0;
+      for (const k of this.ghosts) k.n = 0;
+      for (const k of this.glass) k.n = 0;
       this.platN = 0;
       this.partN = 0;
     }
@@ -728,6 +782,8 @@ o=vec4(c,1.);}`;
         gl.drawElements(gl.TRIANGLES, this.lavaMesh.n, gl.UNSIGNED_SHORT, 0);
         gl.disable(gl.BLEND);
       }
+
+      this._drawTranslucent(F);
 
       if (this.partN) {
         gl.bindBuffer(gl.ARRAY_BUFFER, this.partBuf);

@@ -30,6 +30,8 @@
     COYOTE: 0.1,
     BUFFER: 0.13,
     LAND_SLOP: 0.34,
+    LEDGE_UP: 0.6,   // how far below a top the feet may be and still get lifted onto it
+    LEDGE_VY: -7,    // only while just past the jump's peak, not while dropping fast
     MAX_DY: 3.15,
     REACH_MARGIN: 0.62,
     BOOST_T: 2.4,
@@ -152,6 +154,67 @@
     l: { name: '전설', col: '#ffc94d' },
     m: { name: '기념', col: '#ff9a62' },
   };
+
+  // ---------- abilities ----------
+  // Perks multiply or switch parts of the physics. Higher tiers come from rarer skins.
+  S.PERK0 = {
+    run: 1, jump: 1, fall: 1, grip: 0, bonus: 1, magnet: 1, fuse: 1, pad: 1, coyote: 1, slop: 0,
+    beacon: 1, boost: 1, boostMul: 1.5, coin: 1, boomProof: 0, airJumps: 0, glide: 0, shields: 0, lava: 1,
+  };
+  const A = (tier, icon, perk) => ({ tier, icon, perk });
+  S.ABILITIES = {
+    spring: A(1, '🦘', { jump: 1.03 }),
+    swift: A(1, '👟', { run: 1.07 }),
+    feather: A(1, '🍃', { fall: 0.86 }),
+    grip: A(1, '⛸️', { grip: 1 }),
+    thrifty: A(1, '💰', { bonus: 1.3 }),
+    coiny: A(1, '✨', { magnet: 1.8 }),
+    sturdy: A(1, '🧱', { fuse: 1.5 }),
+    magnet: A(2, '🧲', { magnet: 3.2 }),
+    leap: A(2, '🐸', { jump: 1.06 }),
+    bouncy: A(2, '🎈', { pad: 1.3, jump: 1.02 }),
+    nimble: A(2, '🐾', { coyote: 2.2, slop: 0.22 }),
+    chill: A(2, '❄️', { beacon: 2 }),
+    sprinter: A(2, '⚡', { boost: 2, boostMul: 1.65 }),
+    lucky: A(2, '🍀', { coin: 1.5 }),
+    fireproof: A(2, '🧯', { boomProof: 1, fuse: 1.2 }),
+    double: A(3, '✌️', { airJumps: 1 }),
+    glide: A(3, '🕊️', { glide: 1 }),
+    shield: A(3, '🛡️', { shields: 1 }),
+    cool: A(3, '🌬️', { lava: 0.88 }),
+    golden: A(3, '💎', { coin: 2 }),
+    antigrav: A(3, '🌙', { jump: 1.05, fall: 0.8 }),
+    light: A(3, '👻', { fuse: 2.2, grip: 1 }),
+    phoenix: A(4, '🔥', { shields: 2, fall: 0.88 }),
+    rocket: A(4, '🚀', { airJumps: 2 }),
+    midas: A(4, '👑', { coin: 2, magnet: 3, bonus: 1.5 }),
+    nomad: A(5, '🐪', { run: 1.1, grip: 1, boost: 1.6 }),
+    yeti: A(5, '🏔️', { grip: 1, airJumps: 1, lava: 0.92 }),
+    golem: A(5, '🌋', { shields: 1, boomProof: 1, fuse: 1.6 }),
+    lord: A(5, '🏰', { airJumps: 2, magnet: 3, lava: 0.9 }),
+  };
+  S.TIER_RARITY = ['', 'c', 'r', 'e', 'l', 'm'];
+  S.perkFor = (id) => Object.assign({}, S.PERK0, id && S.ABILITIES[id] ? S.ABILITIES[id].perk : null);
+  const SKIN_AB = {
+    mint: 'spring', coral: 'swift', skyblue: 'feather', grape: 'grip', lime: 'thrifty', peach: 'coiny', cocoa: 'sturdy',
+    bot: 'magnet', frog: 'leap', cat: 'nimble', bunny: 'bouncy', penguin: 'chill', heli: 'sprinter', wizard: 'lucky', party: 'fireproof',
+    knight: 'shield', king: 'golden', devil: 'cool', angel: 'glide', ninja: 'double', alien: 'antigrav', ghost: 'light',
+    flame: 'phoenix', galaxy: 'rocket', gold: 'midas', nomad: 'nomad', yeti: 'yeti', golem: 'golem', lord: 'lord',
+  };
+  S.SKINS.forEach((s) => (s.ab = SKIN_AB[s.id] || null));
+  // Abilities that change how a rival moves (economy perks mean nothing to an AI).
+  S.AI_ABILITIES = ['spring', 'swift', 'feather', 'grip', 'sturdy', 'magnet', 'leap', 'bouncy', 'nimble', 'sprinter',
+    'fireproof', 'double', 'glide', 'shield', 'antigrav', 'light', 'rocket', 'phoenix'];
+
+  // Sky Islands lighting variants so each run's opening looks different.
+  S.SKY_VARIANTS = [
+    null,
+    { top: hex(0x3a4aa0), mid: hex(0xf39a6b), hor: hex(0xffd6a0), sun: hex(0xffcf8a), fog: hex(0xf6c7a0), hemiS: hex(0xffdcc4), hemiG: hex(0x8d6b7c), light: [1.08, 0.84, 0.66] },
+    { top: hex(0x4b5cb8), mid: hex(0xc7a6e8), hor: hex(0xffe3f0), sun: hex(0xfff2f6), fog: hex(0xe6d6f3), hemiS: hex(0xf1e3ff), hemiG: hex(0x8f8aa8), light: [1.0, 0.9, 0.96] },
+  ];
+
+  // AI race: 90 seconds, faster lava ramp, coins for placement (1st..5th).
+  S.RACE = { dur: 90, ai: 4, v0: 1.7, vmax: 3.5, tau: 45, rewards: [150, 90, 60, 40, 25] };
 
   S.TYPE_HINTS = {
     1: '얼음 발판 — 미끄러워요',

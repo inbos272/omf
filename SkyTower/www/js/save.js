@@ -5,7 +5,7 @@
   const KEY = 'omf_skytower_v1', BACKUP = KEY + '_bak';
 
   const defaults = () => ({
-    v: 1, coins: 0, best: 0, runs: 0,
+    v: 1, coins: 0, best: 0, runs: 0, lang: null, raceWins: 0, racePlays: 0,
     skins: ['default'], themes: ['classic'], skin: 'default', theme: 'classic',
     claimed: [], seen: {},
     settings: {
@@ -52,9 +52,10 @@
       } catch (e) { /* storage full or disabled: the session keeps working in memory */ }
     },
     reset() {
-      const keep = this.data.settings;
+      const keep = this.data.settings, lang = this.data.lang;
       this.data = defaults();
       this.data.settings = keep;
+      this.data.lang = lang; // progress reset, not the language choice
       this.save();
     },
   };

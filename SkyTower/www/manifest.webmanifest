@@ -1,16 +1,40 @@
 {
+  "id": "./",
   "name": "ONE MORE FLOOR: SKY TOWER",
   "short_name": "Sky Tower",
-  "description": "끝없는 탑을 오르는 오프라인 3D 아케이드 게임",
+  "description": "Climb an endless sky tower, outrun the rising lava, unlock 30 characters with unique abilities, and race AI rivals. Works fully offline.",
   "lang": "ko",
+  "dir": "ltr",
   "start_url": "./index.html",
   "scope": "./",
   "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
   "orientation": "portrait",
   "background_color": "#1f78ea",
   "theme_color": "#1f78ea",
+  "categories": ["games", "entertainment"],
+  "prefer_related_applications": false,
+  "launch_handler": { "client_mode": "focus-existing" },
   "icons": [
-    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    { "src": "icons/icon-96.png", "sizes": "96x96", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "AI Race",
+      "short_name": "Race",
+      "description": "Race four AI rivals for 90 seconds",
+      "url": "./index.html?mode=race",
+      "icons": [{ "src": "icons/icon-96.png", "sizes": "96x96", "type": "image/png" }]
+    }
+  ],
+  "screenshots": [
+    { "src": "screenshots/climb.jpg", "sizes": "1080x1920", "type": "image/jpeg", "form_factor": "narrow", "label": "Climb the endless sky tower" },
+    { "src": "screenshots/race.jpg", "sizes": "1080x1920", "type": "image/jpeg", "form_factor": "narrow", "label": "Race four AI rivals" },
+    { "src": "screenshots/worlds.jpg", "sizes": "1080x1920", "type": "image/jpeg", "form_factor": "narrow", "label": "Five worlds from sky islands to outer space" },
+    { "src": "screenshots/wide.jpg", "sizes": "1920x1080", "type": "image/jpeg", "form_factor": "wide", "label": "Outrun the rising lava" }
   ]
 }

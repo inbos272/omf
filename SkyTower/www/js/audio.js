@@ -6,6 +6,7 @@
   const CATEGORY = {
     jump: 'jump', land: 'land', coin: 'coin', crumble: 'collapse', collapse: 'collapse', warn: 'warn', over: 'over',
     boom: 'fx', pad: 'fx', speed: 'fx', beacon: 'fx', ui: 'fx', reward: 'fx', env: 'fx', fuse: 'fx', buy: 'fx',
+    airjump: 'jump', bump: 'fx', stomp: 'fx', shield: 'fx', count: 'fx', go: 'fx', overtake: 'fx',
   };
 
   class Sound {
@@ -154,6 +155,35 @@
           break;
         case 'ui':
           this._tone(cat, 'triangle', 660, 880, 0.06, 0.16);
+          break;
+        case 'airjump':
+          this._tone(cat, 'triangle', 520, 1250, 0.14, 0.3);
+          this._tone(cat, 'sine', 1040, 2100, 0.1, 0.12, 0.02);
+          break;
+        case 'bump': {
+          const k = arg === undefined ? 0.6 : arg;
+          this._noise(cat, 0.12, 0.25 + k * 0.3, 900, 180);
+          this._tone(cat, 'sine', 210, 95, 0.14, 0.3 + k * 0.25);
+          break;
+        }
+        case 'stomp':
+          this._tone(cat, 'square', 330, 990, 0.12, 0.16);
+          this._tone(cat, 'sine', 160, 70, 0.16, 0.4);
+          break;
+        case 'shield':
+          [784, 1047, 1319, 1568].forEach((f, i) => this._tone(cat, 'triangle', f, f * 1.01, 0.3, 0.22, i * 0.05));
+          this._noise(cat, 0.5, 0.25, 6000, 900);
+          break;
+        case 'count':
+          this._tone(cat, 'square', 660, 660, 0.13, 0.14);
+          break;
+        case 'go':
+          this._tone(cat, 'square', 990, 990, 0.32, 0.16);
+          this._tone(cat, 'triangle', 1320, 1320, 0.32, 0.18, 0.02);
+          break;
+        case 'overtake':
+          this._tone(cat, 'triangle', 784, 784, 0.09, 0.22);
+          this._tone(cat, 'triangle', 1175, 1175, 0.16, 0.22, 0.08);
           break;
         case 'buy':
           [784, 988, 1319].forEach((f, i) => this._tone(cat, 'triangle', f, f, 0.2, 0.25, i * 0.07));

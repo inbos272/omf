@@ -1,22 +1,30 @@
-// Game flow: state machine, fixed-step loop, rewards, adaptive quality.
+// Game flow: state machine, fixed-step loop, solo runs, AI races, rewards, adaptive quality.
 (function () {
   'use strict';
   const S = window.SKY;
   const C = S.CFG;
+  const t = (k, v) => S.t(k, v);
   const params = new URLSearchParams(location.search);
 
   const canvas = document.getElementById('gl');
   const save = S.Save.load();
+  S.lang = save.lang || S.detectLang();
+  S.applyI18n();
 
   const G = (S.game = {
-    state: 'menu', // menu | play | countdown | paused | dying | over | coll
+    state: 'menu', // menu | play | countdown | raceIntro | paused | dying | over | coll
+    mode: 'solo',  // solo | race
     dragYaw: 0,
     preview: { skin: null, theme: null },
     env: 0,
     rewards: [],
     dyingT: 0,
     countT: 0,
+    raceT: 0,
+    goT: 0,
     bot: null,
+    ff: false,
+    myRank: 0,
   });
 
   let renderer;
@@ -60,6 +68,14 @@
     scene.shakeEnabled = st.shake;
   };
 
+  G.setLanguage = (id) => {
+    S.lang = id;
+    S.Save.data.lang = id;
+    S.Save.save();
+    ui.applyLanguage();
+  };
+  G.languageChosen = () => ui.show('menu');
+
   // ---------- adaptive quality ----------
   const adapt = { acc: 0, frames: 0, cool: 3, scale: 1 };
   G.applyQuality = () => {
@@ -102,7 +118,7 @@
 
   // ---------- loadout ----------
   const skinById = (id) => S.SKINS.find((s) => s.id === id) || S.SKINS[0];
-  const themeById = (id) => S.THEMES.find((t) => t.id === id) || S.THEMES[0];
+  const themeById = (id) => S.THEMES.find((x) => x.id === id) || S.THEMES[0];
   G.applyLoadout = () => {
     const d = S.Save.data;
     scene.skin = skinById(d.skin);
@@ -110,22 +126,45 @@
     audio.vol = d.settings.vol;
     audio.applyVolumes();
   };
+  const loadout = () => {
+    const skin = skinById(S.Save.data.skin);
+    return { skin, ab: skin.ab, perk: S.perkFor(skin.ab) };
+  };
 
   // ---------- flow ----------
   const newSeed = () => (Math.random() * 0x7fffffff) | 0;
+  const inRun = () => G.state === 'paused' || G.state === 'countdown' || G.state === 'play' || G.state === 'raceIntro';
+
+  function beginHud(mode) {
+    G.mode = mode;
+    G.env = 0;
+    G.rewards = [];
+    G.preview.skin = G.preview.theme = null;
+    ui.show('hud');
+    ui.hudReset(mode, sim.p.ab);
+    input.enabled = true;
+    input.reset();
+    audio.duck(false);
+    audio.setMusicEnv(0);
+    audio.setDanger(0);
+    if (!audio.musicOn) audio.startMusic(0);
+  }
 
   G.toMenu = (abandon) => {
-    if (abandon && (G.state === 'paused' || G.state === 'countdown')) finishRun(false);
+    if (abandon && G.mode === 'solo' && inRun()) finishRun(false);
     G.state = 'menu';
+    G.mode = 'solo';
     G.preview.skin = G.preview.theme = null;
     input.enabled = false;
     input.reset();
     audio.duck(false);
-    sim.reset(newSeed(), 0);
-    scene.resetRun();
+    const seed = newSeed();
+    sim.reset(seed, 0, loadout());
+    scene.resetRun(seed);
     G.env = 0;
     audio.setMusicEnv(0);
     audio.setDanger(0);
+    ui.hudReset('solo', null);
     ui.refreshMenu();
     ui.show('menu');
   };
@@ -137,24 +176,48 @@
 
   G.startRun = () => {
     audio.unlock();
-    if (G.state === 'paused' || G.state === 'countdown') finishRun(false); // restarting still banks this run
-    sim.reset(newSeed(), S.Save.data.best);
-    scene.resetRun();
-    G.env = 0;
-    G.rewards = [];
-    G.state = 'play';
-    G.preview.skin = G.preview.theme = null;
+    if (G.mode === 'solo' && inRun()) finishRun(false); // restarting still banks this run
+    const seed = newSeed();
+    sim.reset(seed, S.Save.data.best, loadout());
+    scene.resetRun(seed);
     S.Save.data.runs++;
-    ui.show('hud');
-    ui.hudReset(S.Save.data.best);
-    input.enabled = true;
-    input.reset();
-    audio.duck(false);
-    audio.setMusicEnv(0);
-    audio.setDanger(0);
-    if (!audio.musicOn) audio.startMusic(0);
+    beginHud('solo');
+    G.state = 'play';
     updateHud();
   };
+
+  // Four rivals with distinct looks and random abilities; one of them is always strong.
+  function makeRacers(mySkin) {
+    const pool = S.SKINS.filter((s) => s.id !== mySkin.id);
+    // Tuned so a decent human usually lands on the podium and has to fight for first.
+    const skills = [0.2 + Math.random() * 0.15, 0.32 + Math.random() * 0.15, 0.44 + Math.random() * 0.15, 0.56 + Math.random() * 0.14];
+    const racers = [];
+    for (let i = 0; i < S.RACE.ai; i++) {
+      const skin = pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
+      const ab = S.AI_ABILITIES[Math.floor(Math.random() * S.AI_ABILITIES.length)];
+      const bot = new S.Bot(skills.splice(Math.floor(Math.random() * skills.length), 1)[0], newSeed(), 0.15 + Math.random() * 0.5);
+      racers.push({ skin, ab, perk: S.perkFor(ab), bot });
+    }
+    return racers;
+  }
+
+  G.startRace = () => {
+    audio.unlock();
+    const seed = newSeed();
+    const lo = loadout();
+    sim.reset(seed, 0, Object.assign(lo, { racers: makeRacers(lo.skin) }));
+    scene.resetRun(seed);
+    beginHud('race');
+    ui.raceStart(sim.bodies);
+    G.state = 'raceIntro';
+    G.countT = 3.6;
+    G.raceT = S.RACE.dur;
+    G.myRank = 0;
+    G.lastCount = 0;
+    ui.banner(t('menu.race'), t('race.goal'), t('race.tip'));
+  };
+
+  G.restart = () => (G.mode === 'race' ? G.startRace() : G.startRun());
 
   G.pause = () => {
     if (G.state !== 'play' && G.state !== 'countdown') return;
@@ -162,9 +225,9 @@
     input.enabled = false;
     input.reset();
     audio.duck(true);
-    document.getElementById('pFloor').textContent = sim.floor + '층';
-    document.getElementById('pBest').textContent = '최고 ' + S.Save.data.best + '층';
-    document.getElementById('countdown').textContent = '';
+    document.getElementById('pFloor').textContent = S.fl(sim.floor);
+    document.getElementById('pBest').textContent = G.mode === 'race' ? S.rankText(G.myRank || 1) : t('pause.best', { v: S.fl(S.Save.data.best) });
+    ui.countdown('');
     ui.overlay('pause', true);
   };
 
@@ -187,7 +250,10 @@
       if (m.theme && !d.themes.includes(m.theme)) d.themes.push(m.theme);
       G.rewards.push(m);
       S.Save.save();
-      ui.banner(`${m.floor}층 달성 보상`, `+${m.coins.toLocaleString()} 코인`, m.skin || m.theme ? m.label.replace(/^코인 \d+ \+ /, '') + ' 해금!' : '');
+      const items = [];
+      if (m.skin) items.push(t('skin.' + m.skin));
+      if (m.theme) items.push(t('theme.' + m.theme));
+      ui.banner(t('ms.title', { f: m.floor }), t('ms.coins', { n: m.coins.toLocaleString() }), items.length ? t('ms.unlock', { items: items.join(' + ') }) : '');
       audio.play('reward');
       scene.celebrate([1, 0.7, 0.25]);
       G.vibrate(60);
@@ -198,7 +264,7 @@
     const d = S.Save.data;
     const prevBest = d.best;
     const floor = sim.floor;
-    const picked = sim.coinCount, bonus = floor * 2, earned = picked + bonus;
+    const picked = sim.coinCount, bonus = Math.round(floor * 2 * sim.p.perk.bonus), earned = picked + bonus;
     d.coins += earned;
     const newBest = floor > prevBest;
     if (newBest) d.best = floor;
@@ -206,35 +272,82 @@
     if (showResult) ui.gameOver({ floor, prevBest, newBest, picked, bonus, earned, rewards: G.rewards });
   }
 
+  const raceOrder = () => sim.bodies.slice().sort((a, b) => b.floor - a.floor || a.floorT - b.floorT || a.id - b.id);
+
+  function finishRace(reason) {
+    // If the player fell out early, play the rest of the race instantly so every rival gets a result.
+    G.ff = true;
+    while (G.raceT > 0 && sim.bodies.some((b) => !b.dead)) {
+      sim.step({ move: 0, jump: false });
+      G.raceT -= C.DT;
+    }
+    G.ff = false;
+    sim.started = false; // freeze lava and rivals behind the results
+    const order = raceOrder();
+    const rank = order.indexOf(sim.p) + 1;
+    const rankReward = S.RACE.rewards[rank - 1] || 0, picked = sim.coinCount, earned = rankReward + picked;
+    const d = S.Save.data;
+    d.coins += earned;
+    d.racePlays++;
+    if (rank === 1) d.raceWins++;
+    S.Save.save();
+    G.state = 'over';
+    input.enabled = false;
+    input.reset();
+    ui.raceOver({ reason, order, rank, rankReward, picked, earned });
+    if (rank <= 3) {
+      audio.play('reward');
+      scene.celebrate(rank === 1 ? [1, 0.82, 0.3] : [0.6, 0.85, 1]);
+    }
+  }
+
   function updateHud() {
-    ui.hud(sim.floor, S.Save.data.coins + sim.coinCount);
+    ui.hud(sim.floor, S.Save.data.coins + sim.coinCount, sim.p.shields);
   }
 
   // ---------- simulation events ----------
-  function onSimEvent(name, a, b) {
-    if (!scene || G.state === 'menu') return;
-    scene.onEvent(name, a, b);
+  function onSimEvent(name, a, b, body) {
+    if (!scene || G.state === 'menu' || G.ff) return;
+    scene.onEvent(name, a, b, body);
+    if (G.state === 'over') return; // results are showing: visuals only
+    const mine = !body || body.human;
     switch (name) {
-      case 'jump': audio.play('jump'); break;
+      case 'jump': if (mine) audio.play('jump'); break;
+      case 'airjump': if (mine) audio.play('airjump'); break;
       case 'land':
+        if (!mine) break;
         audio.play('land', Math.min(1, b / 30));
         if (a.type && !S.Save.data.seen[a.type]) {
           S.Save.data.seen[a.type] = 1;
           S.Save.save();
-          ui.toast(S.TYPE_HINTS[a.type], 2600);
+          ui.toast(t('hint.' + a.type), 2600);
         }
         break;
-      case 'coin': audio.play('coin'); G.vibrate(6); break;
-      case 'pad': audio.play('pad'); G.vibrate(15); break;
-      case 'speed': audio.play('speed'); break;
-      case 'crumble': audio.play('crumble'); break;
+      case 'coin': if (mine) { audio.play('coin'); G.vibrate(6); } break;
+      case 'pad': if (mine) { audio.play('pad'); G.vibrate(15); } break;
+      case 'speed': if (mine) audio.play('speed'); break;
+      case 'crumble': if (mine) audio.play('crumble'); break;
       case 'collapse': audio.play('collapse'); break;
-      case 'fuse': audio.play('fuse'); break;
+      case 'fuse': if (mine) audio.play('fuse'); break;
       case 'boom': audio.play('boom'); G.vibrate(b ? 90 : 25); break;
-      case 'beacon': audio.play('beacon'); ui.toast('용암이 잠시 느려져요!', 1500); break;
+      case 'beacon': audio.play('beacon'); if (mine) ui.toast(t('hud.beacon'), 1500); break;
       case 'warn': if (a) { audio.play('warn'); G.vibrate(40); } break;
-      case 'floor': onFloor(a.floor); break;
+      case 'floor': if (mine) onFloor(a.floor); break;
+      case 'shield':
+        if (!mine) break;
+        audio.play('shield');
+        ui.toast(t('hud.shield'), 1600);
+        G.vibrate(80);
+        break;
+      case 'bump':
+        if (a.human || body.human) { audio.play('bump', Math.min(1, b / 12)); G.vibrate(25); }
+        break;
+      case 'stomp':
+        if (a.human) { audio.play('stomp'); ui.pop(t('race.stomp')); G.vibrate(30); }
+        else if (body.human) { audio.play('bump', 0.8); ui.pop(t('race.stomped'), '#ffb4b4'); G.vibrate(40); }
+        break;
       case 'dead':
+        if (!mine) break;
         G.state = 'dying';
         G.dyingT = 1.15;
         input.enabled = false;
@@ -256,10 +369,10 @@
       sim.slowT = Math.max(sim.slowT, C.ENV_SLOW_T);
       audio.setMusicEnv(e);
       audio.play('env');
-      ui.banner(env.en, env.name, `${env.from}층 도달 · 용암 둔화`);
+      ui.banner(env.en, t('env.' + env.id), t('env.sub', { f: env.from }));
       G.vibrate(60);
     }
-    claimMilestones(f);
+    if (G.mode === 'solo') claimMilestones(f);
   }
 
   // ---------- main loop ----------
@@ -288,33 +401,58 @@
         break;
       case 'countdown':
         G.countT -= dt;
-        document.getElementById('countdown').textContent = G.countT > 0 ? Math.ceil(G.countT / 0.5) : '';
+        ui.countdown(G.countT > 0 ? String(Math.ceil(G.countT / 0.5)) : '');
         if (G.countT <= 0) G.state = 'play';
         break;
+      case 'raceIntro': {
+        G.countT -= dt;
+        const n = Math.ceil(G.countT);
+        if (G.countT <= 3 && n !== G.lastCount && n > 0) {
+          G.lastCount = n;
+          audio.play('count');
+          ui.countdown(String(n));
+        }
+        if (G.countT <= 0) {
+          sim.started = true;
+          G.state = 'play';
+          G.goT = 0.8;
+          ui.countdown(t('race.go'), true);
+          audio.play('go');
+          G.vibrate(40);
+        }
+        break;
+      }
+    }
+    if (G.goT > 0) {
+      G.goT -= dt;
+      if (G.goT <= 0) ui.countdown('');
     }
 
     let inp = idleInput;
-    if (G.state === 'play') {
-      inp = G.bot ? G.bot.update(sim, C.DT) : input.poll();
-    }
+    if (G.state === 'play') inp = G.bot ? G.bot.update(sim, C.DT) : input.poll();
 
     acc += simDt;
     while (acc >= C.DT) {
       sim.step(inp);
       acc -= C.DT;
+      if (G.mode === 'race' && (G.state === 'play' || G.state === 'dying')) G.raceT -= C.DT;
       if (G.bot && G.state === 'play') inp = G.bot.update(sim, C.DT);
     }
 
+    if (G.mode === 'race' && G.state === 'play' && G.raceT <= 0) finishRace('time');
     if (G.state === 'dying') {
       G.dyingT -= dt;
       if (G.dyingT <= 0) {
-        G.state = 'over';
-        finishRun(true);
+        if (G.mode === 'race') finishRace('dead');
+        else {
+          G.state = 'over';
+          finishRun(true);
+        }
       }
     }
 
     const paused = G.state === 'paused' || G.state === 'countdown';
-    const inPlay = G.state === 'play' || G.state === 'dying' || paused || G.state === 'over';
+    const inPlay = G.state === 'play' || G.state === 'dying' || paused || G.state === 'over' || G.state === 'raceIntro';
     scene.render(paused ? 0 : dt, paused ? 1 : acc / C.DT, {
       camMode: G.state === 'coll' ? (G.preview.theme ? 'theme' : 'custom') : G.state === 'menu' ? 'menu' : 'play',
       skin: G.preview.skin,
@@ -326,10 +464,21 @@
       // Once the run is banked its coins are already in the wallet; refreshing would count them twice.
       if (G.state !== 'over') updateHud();
       const gap = sim.p.y - sim.lavaY;
-      const danger = G.state === 'play' ? Math.max(0, Math.min(1, 1 - gap / 12)) : 0;
-      audio.setDanger(danger);
-      ui.lava(G.state === 'play' ? Math.max(0, Math.min(1, 1 - (gap - 1) / 8)) : 0, sim.slowT > 0 && !sim.dead);
-      ui.bestTag(G.state === 'play' ? scene.bestScreen : null);
+      const live = G.state === 'play';
+      audio.setDanger(live ? Math.max(0, Math.min(1, 1 - gap / 12)) : 0);
+      ui.lava(live ? Math.max(0, Math.min(1, 1 - (gap - 1) / 8)) : 0, sim.slowT > 0 && !sim.dead);
+      ui.bestTag(live && G.mode === 'solo' ? scene.bestScreen : null);
+      if (G.mode === 'race' && G.state !== 'over') {
+        const order = raceOrder();
+        ui.raceHud(order, G.raceT);
+        ui.raceTags(scene.tagScreens);
+        const rank = order.indexOf(sim.p) + 1;
+        if (G.myRank && rank < G.myRank && live) {
+          audio.play('overtake');
+          ui.pop(rank === 1 ? t('race.lead') : t('race.overtake'), rank === 1 ? '#ffd23f' : '');
+        }
+        G.myRank = rank;
+      }
     }
   }
 
@@ -372,7 +521,7 @@
       });
       cap.App.addListener('pause', () => G.pause());
     }
-  } else if ('serviceWorker' in navigator && location.protocol === 'https:' || params.has('sw')) {
+  } else if (('serviceWorker' in navigator && location.protocol === 'https:') || params.has('sw')) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
 
@@ -380,15 +529,16 @@
   G.applyQuality();
   G.applyControls();
   G.applyLoadout();
-  sim.reset(newSeed(), 0);
-  scene.resetRun();
-  ui.refreshMenu();
+  const seed0 = newSeed();
+  sim.reset(seed0, 0, loadout());
+  scene.resetRun(seed0);
+  ui.applyLanguage();
+  if (!save.lang) ui.showLanguagePick();
+  else if (params.get('mode') === 'race') G.startRace(); // home-screen shortcut
+  else ui.show('menu');
 
   if (params.has('bot')) {
-    const s = document.createElement('script');
-    s.src = 'js/bot.js';
-    s.onload = () => { G.bot = new S.Bot(parseFloat(params.get('bot')) || 0.8, 3); };
-    document.head.appendChild(s);
+    G.bot = new S.Bot(parseFloat(params.get('bot')) || 0.8, 3);
     G.tick = tick;
   }
 
