@@ -152,6 +152,9 @@
 
   G.toMenu = (abandon) => {
     if (abandon && G.mode === 'solo' && inRun()) finishRun(false);
+    net.close();
+    scene.follow = null;
+    ui.spectate(null);
     G.state = 'menu';
     G.mode = 'solo';
     G.preview.skin = G.preview.theme = null;
@@ -292,10 +295,13 @@
         ui.matching(mode, 'error', 0, 0);
         if (code === 'locked') ui.toast(t('mt.locked'), 2400);
       },
+      left: (slot) => {
+        const b = sim.bodies.find((x) => x.slot === slot && !x.human);
+        if (b && G.state !== 'over') ui.toast(t('net.left', { name: ui.nameOf(b) }), 1800);
+      },
       lost: () => {
         if (G.state === 'matching') { ui.matching(mode, 'error', 0, 0); return; }
         G.netLost = true;
-        ui.toast(t('net.lost'), 3000);
       },
     });
   };
@@ -333,15 +339,28 @@
       G.sentResult = true;
       net.sendResult(sim.p);
     }
-    if (net.isHost && !G.sentAi && elapsed >= S.RACE.dur) {
-      G.sentAi = true;
-      net.sendResult(sim.p, sim.bodies.filter((b) => !b.human && net.roster[b.slot] && net.roster[b.slot].ai));
-    }
+    // Host: report AI as they fall; once every human is out, finish the AI race instantly.
+    net.settleAi(sim, S.RACE.dur - elapsed, (ais, left) => {
+      G.ff = true;
+      for (let tLeft = left; tLeft > 0 && ais.some((b) => !b.dead); tLeft -= C.DT) sim.step(idleInput);
+      G.ff = false;
+    });
   }
 
+  // While out of an online race, the camera follows whoever is leading among the climbers.
+  function spectate() {
+    let lead = null;
+    for (const b of sim.bodies) {
+      if (b === sim.p || b.dead) continue;
+      if (!lead || b.floor > lead.floor || (b.floor === lead.floor && b.y > lead.y)) lead = b;
+    }
+    scene.follow = lead;
+    ui.spectate(lead ? ui.nameOf(lead) : null);
+  }
+
+  // The main loop shows the result (after the fall animation if the player just went down).
   function onlineEnd(m) {
     G.endMsg = m;
-    if (G.state === 'play' || G.state === 'waiting' || G.state === 'dying') showOnlineResult();
   }
 
   function showOnlineResult() {
@@ -349,11 +368,16 @@
     const d = S.Save.data;
     const bySlot = {};
     for (const b of sim.bodies) bySlot[b.slot] = b;
+    // Without the server's verdict (connection lost) the local standings can't be trusted —
+    // rivals froze at their last snapshot — so nothing is ranked or rewarded beyond coins picked up.
+    const unranked = !m;
     const order = m
       ? m.order.map((o) => Object.assign(bySlot[o.slot] || {}, { floor: o.floor, dc: o.dc }))
       : raceOrder();
     const rank = order.indexOf(sim.p) + 1;
-    const rankReward = S.RACE.rewards[rank - 1] || 0, picked = sim.coinCount, earned = rankReward + picked;
+    const rankReward = unranked ? 0 : S.RACE.rewards[rank - 1] || 0, picked = sim.coinCount, earned = rankReward + picked;
+    scene.follow = null;
+    ui.spectate(null);
     d.coins += earned;
     let rp = null;
     const prof = m && m.profiles && m.profiles[net.slot];
@@ -367,8 +391,8 @@
     input.enabled = false;
     input.reset();
     net.close();
-    ui.raceOver({ reason: 'time', order, rank, rankReward, picked, earned, rp, note: m ? '' : t('net.lost') });
-    if (rank <= 3) {
+    ui.raceOver({ reason: 'time', order, rank, rankReward, picked, earned, rp, unranked, note: unranked ? t('net.lost') : '' });
+    if (!unranked && rank <= 3) {
       audio.play('reward');
       scene.celebrate(rank === 1 ? [1, 0.82, 0.3] : [0.6, 0.85, 1]);
     }
@@ -612,7 +636,11 @@
       sendOnlineResults();
       // Out of the race but the others are still climbing: spectate until the server reports.
       if (G.state === 'play' && G.raceT <= 0) G.state = 'waiting';
-      if (G.state === 'waiting' && (G.endMsg || G.netLost || G.raceT < -12)) showOnlineResult();
+      if (G.state === 'waiting') spectate();
+      if (G.state !== 'over' && G.state !== 'raceIntro' && (G.endMsg || G.netLost || G.raceT < -12)) {
+        if (G.state === 'dying' && !G.netLost && G.dyingT > 0) { /* let the fall play out first */ }
+        else showOnlineResult();
+      }
     }
 
     if (G.mode === 'race' && G.state === 'play' && G.raceT <= 0) finishRace('time');

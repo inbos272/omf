@@ -261,6 +261,15 @@
       this.overlay('elevator', true);
     }
 
+    spectate(name) {
+      const key = name || '';
+      if (this.lastHud.spec === key) return;
+      this.lastHud.spec = key;
+      const el = $('spectate');
+      el.classList.toggle('hidden', !name);
+      if (name) el.textContent = t('spec.watching', { name });
+    }
+
     elevatorCounter(f) {
       const el = $('elevCounter');
       if (f === null) { el.classList.add('hidden'); return; }
@@ -276,6 +285,7 @@
       $('hud').classList.toggle('online', mode === 'casual' || mode === 'ranked'); // no pausing a live match
       this.elevatorButton(false);
       this.elevatorCounter(null);
+      this.spectate(null);
       $('bestTag').style.opacity = 0;
       $('banner').classList.remove('show');
       $('toast').classList.remove('on');
@@ -467,8 +477,8 @@
     raceOver(r) {
       $('rrTag').textContent = r.reason === 'time' ? t('race.timeUp') : t('over.tag');
       const title = $('rrTitle');
-      title.textContent = r.rank === 1 ? t('race.win') : S.rankText(r.rank);
-      title.className = 'race-title r' + r.rank;
+      title.textContent = r.unranked ? t('net.unranked') : r.rank === 1 ? t('race.win') : S.rankText(r.rank);
+      title.className = 'race-title' + (r.unranked ? '' : ' r' + r.rank);
       const list = $('rrList');
       list.textContent = '';
       r.order.forEach((b, i) => {

@@ -132,14 +132,19 @@ async function race(env, clients, opts) {
       c.sim.runTime = Math.max(0, elapsed - dt);
       c.sim.step(c.sim.dead ? { move: 0, jump: false } : c.bot.update(c.sim, dt));
       c.net.update(c.sim, dt);
+      if (opts.killAt && elapsed >= opts.killAt && !c.sim.dead) c.sim.p.y = c.sim.lavaY - 1; // everyone falls early
       if (!c.sent && (c.sim.dead || elapsed >= S.RACE.dur)) {
         c.sent = true;
         c.net.sendResult(c.sim.p);
       }
-      if (c.net.isHost && !c.aiSent && elapsed >= S.RACE.dur) {
-        c.aiSent = true;
-        c.net.sendResult(c.sim.p, c.sim.bodies.filter((b) => !b.human && c.net.roster[b.slot].ai));
-      }
+      // Same host duty as main.js: report fallen AI, fast-forward them once all humans are out.
+      c.net.settleAi(c.sim, S.RACE.dur - elapsed, (ais, left) => {
+        for (let t = left; t > 0 && ais.some((b) => !b.dead); t -= dt) c.sim.step({ move: 0, jump: false });
+      });
+    }
+    if (opts.stopWhenEnded && clients.every((c) => c.ended || c.dropped)) {
+      opts.endedAt = (clock - startAt) / 1000;
+      break;
     }
     if (opts.dropAt && elapsed >= opts.dropAt && !opts.dropped) {
       opts.dropped = true;
@@ -233,6 +238,44 @@ async function rankedHostDrop() {
   return lockOk && tookOver && lastIsDropped && rpOk;
 }
 
+// Everyone human falls at 5 s: the room must end right away (AI played out by the host),
+// and a player who left cannot rejoin the same room to replace their forfeit.
+async function earlyEndAndRejoin() {
+  const env = makeEnv();
+  const clients = [makeClient(env, 'Gus', 'mint', 0.7), makeClient(env, 'Hal', 'cat', 0.7)];
+  for (const c of clients) c.net.find('casual', c.me, c.handlers);
+  await flush();
+  clock += 10500;
+  await env.MATCH.get(env.MATCH.idFromName('casual')).o.alarm();
+  for (let i = 0; i < 10; i++) await flush();
+  const opts = { killAt: 5, stopWhenEnded: true };
+  await race(env, clients, opts);
+  const end = clients[0].ended;
+  const aiFloors = end ? end.order.filter((o) => clients[0].net.roster[o.slot].ai).map((o) => o.floor) : [];
+  const early = end && opts.endedAt < 30;
+
+  // Forfeit then try to come back with the same room token.
+  const env2 = makeEnv();
+  const a = makeClient(env2, 'Ivy', 'frog', 0.6), b = makeClient(env2, 'Jon', 'bot', 0.6);
+  let token = null, roomId = null;
+  const origJoin = a.net._joinRoom.bind(a.net);
+  a.net._joinRoom = (room, tok) => { roomId = room; token = tok; origJoin(room, tok); };
+  for (const c of [a, b]) c.net.find('casual', c.me, c.handlers);
+  await flush();
+  clock += 10500;
+  await env2.MATCH.get(env2.MATCH.idFromName('casual')).o.alarm();
+  for (let i = 0; i < 10; i++) await flush();
+  a.net.close();
+  await flush();
+  const leftSeen = b.net.leftSlots.has(a.net.slot);
+  let rejoinError = null;
+  const ws = env2.socket('https://fake/room?' + new URLSearchParams({ id: roomId, pid: a.me.pid, token }));
+  ws.onmessage = (e) => { const m = JSON.parse(e.data); if (m.t === 'error') rejoinError = m.code; };
+  await flush();
+  log(`EARLY END: all humans out at 5s → room ended at ${opts.endedAt ? opts.endedAt.toFixed(1) : '-'}s (early=${!!early}), AI floors ${aiFloors.join('/')} | LEAVE: others told=${leftSeen}, rejoin refused=${rejoinError === 'room'}`);
+  return !!early && aiFloors.length === 3 && leftSeen && rejoinError === 'room';
+}
+
 (async () => {
   const t0 = performance.now();
   let pass = true;
@@ -240,6 +283,7 @@ async function rankedHostDrop() {
     pass = unitRules() && pass;
     pass = (await casualMatch()) && pass;
     pass = (await rankedHostDrop()) && pass;
+    pass = (await earlyEndAndRejoin()) && pass;
   } catch (e) {
     pass = false;
     log('EXCEPTION ' + e.stack);

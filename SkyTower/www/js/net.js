@@ -27,6 +27,7 @@
       this.bestRtt = 1e9;
       this.sendT = 0;
       this.h = null;
+      this.leftSlots = new Set();
     }
 
     get configured() { return !!this.baseUrl; }
@@ -140,6 +141,10 @@
         case 'ev':
           if (this.h.event) this.h.event(m);
           break;
+        case 'left':
+          this.leftSlots.add(m.slot);
+          if (this.h.left) this.h.left(m.slot);
+          break;
         case 'end':
           this.phase = 'ended';
           this.h.end(m);
@@ -206,6 +211,15 @@
       const t = now - DELAY_MS;
       for (const b of sim.bodies) {
         if (!b.remote) continue;
+        if (this.leftSlots.has(b.slot)) {
+          // Forfeited players drop out of the race: no frozen ghost, no lead, no spectating.
+          if (!b.dead) {
+            b.dead = true;
+            b.dc = true;
+            if (onRemoteDeath) onRemoteDeath(b);
+          }
+          continue;
+        }
         const s = this.sample(b.slot, t);
         if (!s) continue;
         b.x = b.px = s.x;
@@ -225,10 +239,32 @@
 
     sendEvent(ev) { this._send(this.rws, { t: 'ev', ...ev }); }
 
-    sendResult(body, aiList) {
-      const msg = { t: 'res', floor: body.floor, floorT: body.floorT };
-      if (aiList) msg.ai = aiList.map((b) => ({ slot: b.slot, floor: b.floor, floorT: b.floorT }));
-      this._send(this.rws, msg);
+    // My own final result.
+    sendResult(body) {
+      this._send(this.rws, { t: 'res', floor: body.floor, floorT: body.floorT });
+    }
+
+    // Host only: final results for AI rivals (sent as each one falls, the rest at the end).
+    sendAiResults(list) {
+      if (list.length) this._send(this.rws, { t: 'aires', list: list.map((b) => ({ slot: b.slot, floor: b.floor, floorT: b.floorT })) });
+    }
+
+    // Host only: report AIs that have fallen since last time. If every human is out, nothing can
+    // change the standings any more except the AI, so play their remaining race out instantly
+    // (fastForward) and report everything — the room can then end without waiting for the clock.
+    settleAi(sim, raceLeft, fastForward) {
+      if (!this.isHost || this.phase !== 'room') return;
+      const isAi = (b) => !b.human && this.roster[b.slot] && this.roster[b.slot].ai;
+      const ais = sim.bodies.filter(isAi);
+      const humansOut = sim.bodies.filter((b) => !isAi(b)).every((b) => b.dead);
+      let over = raceLeft <= 0;
+      if (humansOut && ais.some((b) => !b.dead) && !over) {
+        fastForward(ais, raceLeft);
+        over = true;
+      }
+      const fresh = ais.filter((b) => (b.dead || over) && !b.reported);
+      for (const b of fresh) b.reported = true;
+      this.sendAiResults(fresh);
     }
   }
   S.Net = Net;

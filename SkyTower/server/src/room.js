@@ -4,6 +4,8 @@
 import { aiSkillForRp, orderResults, chooseHost, JOIN_MS, COUNTDOWN_MS, RACE_MS, GRACE_MS } from './rules.js';
 
 const send = (ws, msg) => { try { ws.send(JSON.stringify(msg)); } catch (e) { /* socket already gone */ } };
+const toFloor = (v) => (Number.isFinite(+v) ? Math.max(0, Math.floor(+v)) : 0);
+const toTime = (v) => (Number.isFinite(+v) ? +v : 1e9);
 
 export class Room {
   constructor(ctx, env) {
@@ -74,7 +76,8 @@ export class Room {
     this.ctx.acceptWebSocket(ws);
     const m = await this.meta();
     const r = m && m.roster.find((x) => !x.ai && x.pid === pid && x.token === token);
-    if (!r || m.ended) {
+    const forfeited = r && m.results[r.slot] && m.results[r.slot].dc;
+    if (!r || m.ended || forfeited) {
       send(ws, { t: 'error', code: 'room' });
       ws.close(4004, 'unknown room or token');
       return;
@@ -102,19 +105,20 @@ export class Room {
       case 'ai':
         if (a.slot === m.host) this.broadcast({ ...msg, from: a.slot }, ws);
         break;
-      case 'res': {
-        const num = (v, d) => (Number.isFinite(+v) ? +v : d);
-        if (!m.results[a.slot]) m.results[a.slot] = { floor: Math.max(0, Math.floor(num(msg.floor, 0))), floorT: num(msg.floorT, 1e9) };
-        if (a.slot === m.host && Array.isArray(msg.ai)) {
-          for (const r of msg.ai) {
-            const e = m.roster[r.slot];
-            if (e && e.ai && !m.results[r.slot]) m.results[r.slot] = { floor: Math.max(0, Math.floor(num(r.floor, 0))), floorT: num(r.floorT, 1e9) };
-          }
+      case 'res': // a player's own final result (sent when they fall or when time runs out)
+        if (!m.results[a.slot]) m.results[a.slot] = { floor: toFloor(msg.floor), floorT: toTime(msg.floorT) };
+        await this.save();
+        if (this.complete()) await this.finish();
+        break;
+      case 'aires': // AI results, only from the host, sent as each AI falls
+        if (a.slot !== m.host || !Array.isArray(msg.list)) break;
+        for (const r of msg.list) {
+          const e = m.roster[r.slot];
+          if (e && e.ai && !m.results[r.slot]) m.results[r.slot] = { floor: toFloor(r.floor), floorT: toTime(r.floorT) };
         }
         await this.save();
         if (this.complete()) await this.finish();
         break;
-      }
     }
   }
 
@@ -127,8 +131,12 @@ export class Room {
     try { ws.serializeAttachment(null); } catch (e) { /* closed sockets may refuse writes */ }
     const m = await this.meta();
     if (!a || !m || m.ended) return;
-    // Leaving a started race without a result counts as last place.
-    if (this.now() >= m.startAt && !m.results[a.slot]) m.results[a.slot] = { dc: true, floor: 0 };
+    // Leaving without a result (before or during the race) forfeits: last place, and a rejoin
+    // later cannot replace it. Everyone else is told so the leaver's ghost drops out of the race.
+    if (!m.results[a.slot]) {
+      m.results[a.slot] = { dc: true, floor: 0 };
+      this.broadcast({ t: 'left', slot: a.slot });
+    }
     await this.save();
     await this.updateHost();
     if (this.complete() || this.connected().size === 0) await this.finish();

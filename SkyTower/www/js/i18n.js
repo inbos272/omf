@@ -165,6 +165,9 @@
   a('mt.failed', '연결에 실패했어요', 'Connection failed', '接続に失敗しました', '连接失败', 'Falló la conexión');
   a('mt.locked', '랭크전은 일반대전 5승 후 열려요', 'Ranked opens after 5 casual wins', 'ランク戦はカジュアル5勝で解放', '普通对战5胜后开放排位赛', 'La clasificatoria se abre tras 5 victorias casuales');
   a('net.lost', '연결이 끊겼어요. 이 경기는 기록되지 않아요', 'Connection lost. This match won\'t count', '接続が切れました。この試合は記録されません', '连接已断开，本场不计入记录', 'Conexión perdida. Esta partida no cuenta');
+  a('net.left', '{name} 님이 나갔어요', '{name} left the race', '{name}さんが退出しました', '{name} 离开了比赛', '{name} abandonó la carrera');
+  a('net.unranked', '기록되지 않음', 'Not recorded', '記録されません', '不计入记录', 'Sin registrar');
+  a('spec.watching', '👀 관전 중: {name}', '👀 Watching {name}', '👀 観戦中: {name}', '👀 观战中: {name}', '👀 Viendo a {name}');
   a('net.waiting', '다른 선수들의 결과를 기다리는 중…', 'Waiting for the others to finish…', '他の選手の結果を待っています…', '等待其他选手完成…', 'Esperando a los demás…');
   a('rr.rp', '랭크 점수', 'Rank points', 'ランクポイント', '排位分', 'Puntos de rango');
   a('rr.promoted', '{tier} 승급!', 'Promoted to {tier}!', '{tier}に昇格！', '晋升{tier}！', '¡Ascenso a {tier}!');

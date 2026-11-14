@@ -691,12 +691,16 @@
       cam.yOff += (mode.yOff - cam.yOff) * K;
       cam.sway += (mode.sway - cam.sway) * K;
 
-      const targetTh = ix / R + (opts.camMode === 'play' ? (p.vx / R) * 0.11 : 0);
-      if (!sim.dead) cam.th += wrapAngle(targetTh - cam.th) * (1 - Math.exp(-9 * dt));
-      let targetY = iy + cam.yOff;
-      if (opts.camMode === 'play' && p.vy > 0) targetY += p.vy * 0.05;
+      // Spectating: after falling out of an online race the camera follows the leader instead.
+      const f = this.follow && !this.follow.dead ? this.follow : null;
+      const tb = f || p, tx = f ? f.x : ix, ty = f ? f.y : iy;
+      const live = !sim.dead || f;
+      const targetTh = tx / R + (opts.camMode === 'play' ? (tb.vx / R) * 0.11 : 0);
+      if (live) cam.th += wrapAngle(targetTh - cam.th) * (1 - Math.exp(-(f ? 5 : 9) * dt));
+      let targetY = ty + cam.yOff;
+      if (opts.camMode === 'play' && tb.vy > 0) targetY += tb.vy * 0.05;
       if (this.elev) cam.y = targetY; // locked to the cabin: it moves far too fast to chase
-      else if (!sim.dead) {
+      else if (live) {
         const rate = targetY > cam.y ? 7 : 4;
         cam.y += (targetY - cam.y) * (1 - Math.exp(-rate * dt));
       }
