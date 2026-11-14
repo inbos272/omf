@@ -42,7 +42,22 @@
       document.addEventListener('click', (e) => { if (e.target.closest('button')) G.audio.play('ui'); }, true);
 
       $('btnPlay').onclick = () => G.startRun();
-      $('btnRace').onclick = () => G.startRace();
+      $('btnVersus').onclick = () => G.openVersus();
+      $('btnVsClose').onclick = () => this.overlay('versus', false);
+      $('vsAi').onclick = () => { this.overlay('versus', false); G.startRace(); };
+      $('vsCasual').onclick = () => G.startOnline('casual');
+      $('vsRanked').onclick = () => G.startOnline('ranked');
+      $('btnMtCancel').onclick = () => G.cancelOnline();
+      $('btnElev').onclick = () => this.openElevator();
+      $('btnElevClose').onclick = () => this.overlay('elevator', false);
+      $('btnNickSave').onclick = () => {
+        const n = S.cleanNick($('sNick').value);
+        if (!n) { $('sNick').value = S.Save.data.nick; return; }
+        S.Save.data.nick = n;
+        S.Save.save();
+        $('sNick').value = n;
+        this.toast(t('set.nickSaved'), 1400);
+      };
       $('btnCustom').onclick = () => this.openColl('custom');
       $('btnShop').onclick = () => this.openColl('shop');
       $('btnSettings').onclick = () => this.openSettings();
@@ -53,7 +68,7 @@
       $('btnQuit').onclick = () => G.toMenu(true);
       $('btnAgain').onclick = () => G.startRun();
       $('btnOverMenu').onclick = () => G.toMenu(false);
-      $('btnRaceAgain').onclick = () => G.startRace();
+      $('btnRaceAgain').onclick = () => G.again();
       $('btnRaceMenu').onclick = () => G.toMenu(false);
       $('btnCollBack').onclick = () => G.toMenu(false);
       $('btnCollAction').onclick = () => this.collAction();
@@ -171,6 +186,7 @@
       $('sShake').checked = st.shake;
       for (const b of $('sQuality').children) b.classList.toggle('on', b.dataset.q === st.quality);
       for (const b of $('sLang').children) b.classList.toggle('on', b.dataset.lang === S.lang);
+      $('sNick').value = S.Save.data.nick;
     }
 
     openSettings() {
@@ -185,14 +201,81 @@
       const d = S.Save.data;
       $('mBest').textContent = S.fl(d.best);
       $('mCoins').textContent = d.coins.toLocaleString();
-      $('mRaceSub').textContent = d.raceWins > 0 ? t('menu.wins', { n: d.raceWins }) : t('menu.raceSub');
+      $('mVersusSub').textContent = t('menu.versusSub');
+    }
+
+    nameOf(b) {
+      return b.human ? S.Save.data.nick : b.name || S.nameOf('skin', b.skin);
+    }
+
+    // ---- versus sheet ----
+    // st: { server: 'none' | 'checking' | 'offline' | 'ok' }
+    versus(st) {
+      const d = S.Save.data;
+      const lv = Math.min(d.raceWins, 9) + 1;
+      $('vsAiSub').textContent = t('vs.aiSub', { lv, n: d.raceWins });
+      const online = st.server === 'ok';
+      $('vsCasual').disabled = !online;
+      $('vsCasualSub').textContent = t('vs.casualSub', { n: d.casualWins });
+      const unlocked = d.casualWins >= S.RANKED_UNLOCK;
+      $('vsRanked').disabled = !online || !unlocked;
+      const tier = S.tierFor(d.rp);
+      $('vsRankIcon').textContent = unlocked ? '🏆' : '🔒';
+      $('vsRankIcon').style.color = tier.col;
+      $('vsRankedSub').textContent = unlocked ? t('vs.rankedSub', { tier: t('tier.' + tier.id), rp: d.rp }) : t('vs.locked', { n: d.casualWins });
+      $('vsRankedSub').style.color = unlocked ? tier.col : '';
+      $('vsStatus').textContent = st.server === 'none' ? t('vs.noServer') : st.server === 'offline' ? t('vs.offline') : st.server === 'checking' ? t('vs.checking') : '';
+      this.overlay('versus', true);
+    }
+
+    matching(mode, phase, n, fillIn) {
+      $('mtTitle').textContent = t(mode === 'ranked' ? 'vs.ranked' : 'vs.casual');
+      $('mtCount').textContent = phase === 'joining' ? '' : t('mt.count', { n: n || 1 });
+      $('mtSub').textContent = phase === 'joining' ? t('mt.joining') : phase === 'error' ? t('mt.failed') : fillIn > 0 ? t('mt.fill', { s: Math.ceil(fillIn / 1000) }) : t('mt.searching');
+      $('btnMtCancel').classList.toggle('hidden', phase === 'joining');
+      this.overlay('versus', false);
+      this.overlay('matching', true);
+    }
+
+    // ---- elevator ----
+    elevatorButton(show) {
+      if (this.lastHud.elev === show) return;
+      this.lastHud.elev = show;
+      $('btnElev').classList.toggle('hidden', !show);
+    }
+
+    openElevator() {
+      const d = S.Save.data, list = $('elevList');
+      list.textContent = '';
+      for (const e of S.ELEVATOR) {
+        const b = document.createElement('button');
+        b.className = 'elev-row';
+        b.disabled = d.coins < e.price;
+        b.innerHTML = '<b></b><span><i class="coin"></i> <em></em></span>';
+        b.firstChild.textContent = S.fl(e.floor);
+        b.querySelector('em').textContent = e.price.toLocaleString();
+        b.onclick = () => { this.overlay('elevator', false); this.G.elevator(e.floor); };
+        list.appendChild(b);
+      }
+      $('elevCoins').textContent = d.coins.toLocaleString();
+      this.overlay('elevator', true);
+    }
+
+    elevatorCounter(f) {
+      const el = $('elevCounter');
+      if (f === null) { el.classList.add('hidden'); return; }
+      el.classList.remove('hidden');
+      $('elevFloor').textContent = f;
     }
 
     // ---- HUD ----
     hudReset(mode, abilityId) {
       this.lastHud = {};
-      const race = mode === 'race';
+      const race = mode !== 'solo';
       $('hud').classList.toggle('racing', race);
+      $('hud').classList.toggle('online', mode === 'casual' || mode === 'ranked'); // no pausing a live match
+      this.elevatorButton(false);
+      this.elevatorCounter(null);
       $('bestTag').style.opacity = 0;
       $('banner').classList.remove('show');
       $('toast').classList.remove('on');
@@ -319,7 +402,7 @@
         dot.style.background = rgb(b.skin.body);
         const name = document.createElement('span');
         name.className = 'rb-name';
-        name.textContent = b.human ? t('race.you') : S.nameOf('skin', b.skin);
+        name.textContent = this.nameOf(b);
         const fl = document.createElement('b');
         fl.textContent = '0';
         row.append(dot, name, fl);
@@ -329,8 +412,8 @@
           const tag = document.createElement('div');
           tag.className = 'tag';
           tag.innerHTML = '<span class="tag-ab"></span><span class="tag-name"></span>';
-          tag.firstChild.textContent = S.abIcon(b.ab);
-          tag.lastChild.textContent = S.nameOf('skin', b.skin);
+          tag.firstChild.textContent = b.remote && b.name ? '🌐' : S.abIcon(b.ab);
+          tag.lastChild.textContent = this.nameOf(b);
           tag.style.borderColor = rgb(b.skin.body);
           tags.appendChild(tag);
           this.race.tags[b.id] = { el: tag, vis: null };
@@ -399,7 +482,7 @@
         img.src = this._thumb('skin', b.skin);
         const nm = document.createElement('span');
         nm.className = 'nm';
-        nm.textContent = (b.human ? t('race.you') : S.nameOf('skin', b.skin)) + (b.ab ? ' ' + S.abIcon(b.ab) : '');
+        nm.textContent = this.nameOf(b) + (b.ab ? ' ' + S.abIcon(b.ab) : '') + (b.dc ? ' ⚡' : '');
         const fl = document.createElement('b');
         fl.textContent = S.fl(b.floor);
         li.append(medal, img, nm, fl);
@@ -408,6 +491,20 @@
       $('rrRank').textContent = '+' + r.rankReward;
       $('rrPicked').textContent = '+' + r.picked;
       $('rrEarned').textContent = r.earned.toLocaleString();
+      // Ranked: rank-point change and promotions.
+      const rp = $('rrRp');
+      if (r.rp) {
+        rp.classList.remove('hidden');
+        const sign = r.rp.delta >= 0 ? '+' : '';
+        rp.querySelector('dd').textContent = `${sign}${r.rp.delta} → ${r.rp.rp} RP`;
+        rp.querySelector('dd').style.color = r.rp.delta >= 0 ? '#6ee7a8' : '#ff9a9a';
+        if (r.rp.tier !== r.rp.prevTier) {
+          const up = S.TIERS.findIndex((x) => x.id === r.rp.tier) > S.TIERS.findIndex((x) => x.id === r.rp.prevTier);
+          $('rrTag').textContent = t(up ? 'rr.promoted' : 'rr.demoted', { tier: t('tier.' + r.rp.tier) });
+        }
+      } else rp.classList.add('hidden');
+      if (r.note) $('rrTag').textContent = r.note;
+      this.overlay('matching', false);
       this.show('raceOver', true);
     }
 

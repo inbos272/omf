@@ -56,8 +56,9 @@
         this.wasAir = false;
         const base = 0.42 - 0.34 * this.skill;
         this.wait = base * (0.6 + this.rng() * 0.8);
-        // Weaker bots misjudge distances now and then.
-        this.reach = 0.85 + (this.rng() < (1 - this.skill) * 0.25 ? 0.3 : 0);
+        // Weaker bots misjudge distances now and then; strong ones almost never do.
+        const miss = (1 - this.skill) * (1 - this.skill) * 0.35;
+        this.reach = (0.8 + this.skill * 0.1) + (this.rng() < miss ? 0.3 : 0);
       }
 
       if (this.chargeT > 0) {
@@ -66,7 +67,7 @@
         o.jump = false;
         return o;
       }
-      if (this.aggro > 0 && this.rng() < this.aggro * dt * 1.5) {
+      if (this.aggro > 0 && p.ground.state === 0 && this.rng() < this.aggro * dt * 1.5) {
         for (const b of sim.bodies) {
           if (b === p || b.dead || b.ground !== p.ground) continue;
           const bx = S.wrapD(b.x - p.x);

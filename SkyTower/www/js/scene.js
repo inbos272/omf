@@ -183,7 +183,10 @@
     menu: { D: 11.5, pitch: 0.14, yOff: 0, sway: 0.14, lookR: 0 },
     custom: { D: 6.6, pitch: 0.09, yOff: -1.05, sway: 0, lookR: 0 },
     theme: { D: 10, pitch: 0.42, yOff: -3.1, sway: 0, lookR: 0 },
+    elevator: { D: 14, pitch: 0.12, yOff: 1.4, sway: 0, lookR: 0 },
   };
+  const CAB_R = 2.6, RIDE_T = 3.4, EXIT_T = 0.8;
+  const easeInOut = (k) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
 
   class Scene {
     constructor(renderer, sim) {
@@ -253,6 +256,8 @@
     }
 
     resetRun(seed) {
+      this.elev = null;
+      this.elevRad = 0;
       if (seed !== undefined) {
         // New scenery around the tower and a new opening sky every run.
         this.decor = S.ENVS.map((e) => buildDecor(e.id, seed));
@@ -578,6 +583,86 @@
       return { view: v, pal, sunD: [0.35, 0.72, 0.6], oy: 0, time: 1, lavaY: -999, lavaG: 0, shadow: [0, 0, 0, 0], theme: this.theme, column: 0, camDir: [0, 0, 1] };
     }
 
+    // ---------- elevator ----------
+    elevatorStart(fromY, toY, x) {
+      this.elev = { from: fromY, to: toY, x, t: 0, envAt: -1 };
+      this.elevRad = CAB_R;
+      this.cam.y = fromY + CAM_MODES.elevator.yOff;
+    }
+
+    elevatorProgress() {
+      return this.elev ? easeInOut(clamp(this.elev.t / RIDE_T, 0, 1)) : 1;
+    }
+
+    // Advances the ride; returns true once the player has stepped out.
+    elevatorTick(dt) {
+      const e = this.elev;
+      if (!e) return true;
+      e.t += dt;
+      const y = this._cabinY();
+      // Pass through the worlds on the way up.
+      let env = 0;
+      for (let i = 0; i < S.ENVS.length; i++) if (y >= this._envY(i)) env = i;
+      if (env !== this.env) this.setEnv(env);
+      if (e.t < RIDE_T) {
+        const th = e.x / R;
+        for (let i = 0; i < 3 * this.quality; i++) {
+          const a = th + (Math.random() - 0.5) * 0.6, rd = R + CAB_R + (Math.random() - 0.5) * 4;
+          this.fx.emit(Math.sin(a) * rd, y + Math.random() * 9 - 2, Math.cos(a) * rd, 0, -70, 0, 0.22, 0.14, 0.05, 0.75, 0.9, 1, 0.9, 0, true);
+        }
+      }
+      if (e.t >= RIDE_T && !e.arrived) {
+        e.arrived = true;
+        this.burst(e.x, e.to + 1.2, 30, 9, 0.7, 0.45, 0.06, [0.7, 0.95, 1], 1, 4, true, CAB_R);
+        this.cam.shake = Math.max(this.cam.shake, 0.25);
+      }
+      const k = clamp((e.t - RIDE_T) / EXIT_T, 0, 1);
+      this.elevRad = CAB_R * (1 - clamp((k - 0.35) / 0.65, 0, 1));
+      if (e.t >= RIDE_T + EXIT_T) {
+        this.elev = null;
+        this.elevRad = 0;
+        return true;
+      }
+      return false;
+    }
+
+    _cabinY() {
+      const e = this.elev;
+      return e.from + (e.to - e.from) * this.elevatorProgress();
+    }
+
+    // Height where an environment starts, read from the generated golden platforms.
+    _envY(i) {
+      if (i === 0) return -1e9;
+      const q = this.sim.findGolden(S.ENVS[i].from);
+      return q ? q.y : 1e9;
+    }
+
+    _drawElevator(oy, th) {
+      const e = this.elev, r = this.r;
+      const y = this._cabinY() - oy, sn = Math.sin(th), cs = Math.cos(th), rad = R + CAB_R;
+      const bx = sn * rad, bz = cs * rad;
+      const P = (lx, ly, lz) => [bx + cs * lx + sn * lz, y + ly, bz - sn * lx + cs * lz];
+      const box = (lx, ly, lz, sx, sy, sz, c, em, gl, a) => {
+        const p = P(lx, ly, lz);
+        trs(m, p[0], p[1], p[2], th, 0, sx, sy, sz);
+        r.rigid(M.RBOX, m, c[0], c[1], c[2], em, gl, a);
+      };
+      const open = clamp((e.t - RIDE_T) / (EXIT_T * 0.4), 0, 1);
+      const white = [0.95, 0.96, 1], gold = [1, 0.82, 0.38], glass = [0.6, 0.9, 1];
+      box(0, 0.08, 0, 1.15, 0.1, 0.95, white, 0.05, 0.6);
+      box(0, 2.6, 0, 1.15, 0.12, 0.95, white, 0.05, 0.6);
+      box(0, 2.45, 0, 0.85, 0.03, 0.65, [1, 0.95, 0.8], 1.4, 0);
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(sx * 1.08, 1.33, sz * 0.88, 0.07, 1.3, 0.07, gold, 0.25, 0.9);
+      box(0, 1.33, -0.9, 1.08, 1.22, 0.03, glass, 0.3, 1, 0.18);
+      for (const sx of [-1, 1]) box(sx * 1.1, 1.33, 0, 0.03, 1.22, 0.86, glass, 0.3, 1, 0.18);
+      for (const sx of [-1, 1]) box(sx * (0.54 + open * 0.95), 1.33, 0.9, 0.54, 1.22, 0.03, glass, 0.3, 1, 0.18);
+      // Light rail along the shaft.
+      const lo = e.from - oy, hi = e.to - oy + 3, rail = P(0, 0, -1.05);
+      trs(m, rail[0], (lo + hi) / 2, rail[2], th, 0, 0.06, hi - lo, 0.06);
+      r.rigid(M.CYL, m, 0.5, 0.9, 1, 1.5, 0);
+    }
+
     // ---------- frame ----------
     render(dt, alpha, opts) {
       const sim = this.sim, p = sim.p, cam = this.cam, r = this.r;
@@ -594,9 +679,9 @@
         if (this.envT >= 3) cam.floorY = cam.y;
       }
 
-      // Interpolated player
-      const ix = p.px + S.wrapD(p.x - p.px) * alpha;
-      const iy = p.py + (p.y - p.py) * alpha;
+      // Interpolated player (or the player riding the elevator cabin)
+      const ix = this.elev ? this.elev.x : p.px + S.wrapD(p.x - p.px) * alpha;
+      const iy = this.elev ? this._cabinY() + 0.18 * (this.elevRad / CAB_R) : p.py + (p.y - p.py) * alpha;
 
       // Camera
       const mode = CAM_MODES[opts.camMode];
@@ -610,11 +695,12 @@
       if (!sim.dead) cam.th += wrapAngle(targetTh - cam.th) * (1 - Math.exp(-9 * dt));
       let targetY = iy + cam.yOff;
       if (opts.camMode === 'play' && p.vy > 0) targetY += p.vy * 0.05;
-      if (!sim.dead) {
+      if (this.elev) cam.y = targetY; // locked to the cabin: it moves far too fast to chase
+      else if (!sim.dead) {
         const rate = targetY > cam.y ? 7 : 4;
         cam.y += (targetY - cam.y) * (1 - Math.exp(-rate * dt));
       }
-      cam.y = Math.max(cam.y, sim.lavaY + 7);
+      if (!this.elev) cam.y = Math.max(cam.y, sim.lavaY + 7);
       cam.shake = Math.max(0, cam.shake - dt * 2.6);
       cam.kick = Math.max(0, cam.kick - dt * 1.4);
 
@@ -646,6 +732,7 @@
       this._pickups(oy, th, time, opts);
       this.alpha = alpha;
       this._drawBodies(dt, ix, iy, oy, th, opts);
+      if (this.elev) this._drawElevator(oy, ix / R);
       this._decor(oy);
       this._ambient(dt, th);
 
@@ -655,10 +742,12 @@
       const lavaY = sim.lavaY;
       const gap = iy - lavaY;
       const proj = r.project(v, sn * R, lavaY - oy, cs * R);
+      // While riding up from far below, the destination's lava would hang overhead: hide it.
+      const lavaAbove = this.elev && cam.y < lavaY + 6;
       F.lavaY = lavaY - oy;
-      F.lavaVisible = lavaY - oy > -90;
-      F.lavaG = clamp(1.25 - (cam.y - lavaY) / 30, 0, 1.25);
-      F.heat = clamp(1 - gap / 20, 0, 1);
+      F.lavaVisible = lavaY - oy > -90 && !lavaAbove;
+      F.lavaG = lavaAbove ? 0 : clamp(1.25 - (cam.y - lavaY) / 30, 0, 1.25);
+      F.heat = lavaAbove ? 0 : clamp(1 - gap / 20, 0, 1);
       F.lavaS = proj[2] > 0 ? proj[1] : -1;
       F.warn = opts.camMode === 'play' && !sim.dead ? clamp(1 - (gap - 1.5) / 7, 0, 1) : 0;
       this.flash = Math.max(0, this.flash - dt * 2.4);
@@ -820,11 +909,12 @@
         yaw = th + Math.sin(this.time * 0.8) * 0.3;
       }
       const sink = p.dead ? st.deadT * 1.6 : 0;
-      this.drawCharacter(skin, sn * R, iy - oy - sink, cs * R, yaw, st, alpha);
+      const rr = human ? R + (this.elevRad || 0) : R; // in the elevator the player stands in the cabin
+      this.drawCharacter(skin, sn * rr, iy - oy - sink, cs * rr, yaw, st, alpha);
       this._alpha = 1;
       if (p.shields > 0 && !p.dead && opts.camMode === 'play') {
         const pulse = 1 + Math.sin(this.time * 5 + p.id) * 0.04;
-        trs(m, sn * R, iy - oy + 0.75, cs * R, 0, 0, 1.05 * pulse, 1.12 * pulse, 1.05 * pulse);
+        trs(m, sn * rr, iy - oy + 0.75, cs * rr, 0, 0, 1.05 * pulse, 1.12 * pulse, 1.05 * pulse);
         this.r.rigid(M.SPHERE, m, 0.45, 0.85, 1, 0.9, 0.8, 0.2);
       }
 
@@ -873,7 +963,7 @@
         else fx.emit(x, y, z, 0, 0.2, 0, 2.8, 0.13, 0.13, 0.75, 0.82, 1, 0.8, 0, true);
       }
       // Sparks off the lava surface, only when it is close enough to see.
-      if (sim.lavaY > cam.y - 34) {
+      if (sim.lavaY > cam.y - 34 && !(this.elev && cam.y < sim.lavaY + 6)) {
         this.emberT += dt * 34 * this.quality;
         while (this.emberT > 1) {
           this.emberT -= 1;

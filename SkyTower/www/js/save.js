@@ -6,6 +6,7 @@
 
   const defaults = () => ({
     v: 1, coins: 0, best: 0, runs: 0, lang: null, raceWins: 0, racePlays: 0,
+    nick: '', pid: '', casualWins: 0, rp: 0, tier: 'bronze', // online numbers are a cache of the server's
     skins: ['default'], themes: ['classic'], skin: 'default', theme: 'classic',
     claimed: [], seen: {},
     settings: {
@@ -27,6 +28,17 @@
     try { return window.localStorage.getItem(k); } catch (e) { return null; }
   }
 
+  // Random device id for online play (no account). Falls back when crypto.randomUUID is missing.
+  S.newId = () => {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    const a = new Uint8Array(16);
+    if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(a);
+    else for (let i = 0; i < a.length; i++) a[i] = Math.floor(Math.random() * 256);
+    return Array.from(a, (b) => b.toString(16).padStart(2, '0')).join('');
+  };
+  // Same rules as the server: 1–12 visible characters, no control characters or angle brackets.
+  S.cleanNick = (s) => String(s || '').replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, 12);
+
   S.Save = {
     data: defaults(),
     load() {
@@ -41,6 +53,8 @@
       if (!d.themes.includes('classic')) d.themes.push('classic');
       if (!S.SKINS.some((s) => s.id === d.skin && d.skins.includes(s.id))) d.skin = 'default';
       if (!S.THEMES.some((t) => t.id === d.theme && d.themes.includes(t.id))) d.theme = 'classic';
+      if (!d.nick) d.nick = 'Climber' + String(Math.floor(1000 + Math.random() * 9000));
+      if (!d.pid) d.pid = S.newId();
       this.data = d;
       return d;
     },
@@ -52,10 +66,10 @@
       } catch (e) { /* storage full or disabled: the session keeps working in memory */ }
     },
     reset() {
-      const keep = this.data.settings, lang = this.data.lang;
+      const old = this.data;
       this.data = defaults();
-      this.data.settings = keep;
-      this.data.lang = lang; // progress reset, not the language choice
+      // Progress reset, not the language, name or online identity (rank lives on the server).
+      for (const k of ['settings', 'lang', 'nick', 'pid', 'casualWins', 'rp', 'tier']) this.data[k] = old[k];
       this.save();
     },
   };

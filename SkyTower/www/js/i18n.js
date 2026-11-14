@@ -144,6 +144,45 @@
   a('race.stomp', '밟기!', 'Stomp!', '踏みつけ！', '踩踏！', '¡Pisotón!');
   a('race.stomped', '밟혔다!', 'Stomped!', '踏まれた！', '被踩了！', '¡Te pisaron!');
 
+  // ---- versus / online / elevator / nickname ----
+  a('menu.versus', '대전', 'VERSUS', '対戦', '对战', 'DUELO');
+  a('menu.versusSub', 'AI대전 · 일반대전 · 랭크전', 'AI · Casual · Ranked', 'AI・カジュアル・ランク', 'AI · 普通 · 排位', 'IA · Casual · Clasificatoria');
+  a('vs.title', '대전', 'Versus', '対戦', '对战', 'Duelo');
+  a('vs.ai', 'AI대전', 'AI Race', 'AI対戦', 'AI对战', 'Carrera IA');
+  a('vs.aiSub', 'AI 레벨 {lv} · 우승 {n}회', 'AI level {lv} · {n} wins', 'AIレベル{lv}・優勝{n}回', 'AI等级{lv} · 夺冠{n}次', 'Nivel IA {lv} · {n} victorias');
+  a('vs.casual', '일반대전', 'Casual', 'カジュアル対戦', '普通对战', 'Casual');
+  a('vs.casualSub', '온라인 5인 · 우승 {n}회', 'Online, 5 players · {n} wins', 'オンライン5人・優勝{n}回', '在线5人 · 夺冠{n}次', 'En línea, 5 jugadores · {n} victorias');
+  a('vs.ranked', '랭크전', 'Ranked', 'ランク戦', '排位赛', 'Clasificatoria');
+  a('vs.rankedSub', '{tier} · {rp} RP', '{tier} · {rp} RP', '{tier}・{rp} RP', '{tier} · {rp} RP', '{tier} · {rp} RP');
+  a('vs.locked', '일반대전 {n}/5승 시 해금', 'Unlocks at 5 casual wins ({n}/5)', 'カジュアル5勝で解放（{n}/5）', '普通对战5胜解锁（{n}/5）', 'Se desbloquea con 5 victorias casuales ({n}/5)');
+  a('vs.noServer', '온라인 서버가 설정되지 않았어요', 'No online server is set up', 'オンラインサーバーが未設定です', '尚未设置在线服务器', 'No hay servidor en línea configurado');
+  a('vs.offline', '서버에 연결할 수 없어요', 'Can\'t reach the server', 'サーバーに接続できません', '无法连接服务器', 'No se puede conectar al servidor');
+  a('vs.checking', '서버 확인 중…', 'Checking the server…', 'サーバー確認中…', '正在检查服务器…', 'Comprobando el servidor…');
+  a('mt.searching', '상대를 찾는 중…', 'Finding rivals…', '対戦相手を検索中…', '正在寻找对手…', 'Buscando rivales…');
+  a('mt.count', '{n}/5명', '{n}/5 players', '{n}/5人', '{n}/5人', '{n}/5 jugadores');
+  a('mt.fill', '{s}초 후 빈자리는 AI로 채워요', 'Empty slots fill with AI in {s}s', '{s}秒後、空き枠をAIで補充します', '{s}秒后由AI补位', 'Los huecos se llenan con IA en {s} s');
+  a('mt.joining', '경기장에 입장하는 중…', 'Joining the match…', '入場中…', '正在进入比赛…', 'Entrando a la partida…');
+  a('mt.failed', '연결에 실패했어요', 'Connection failed', '接続に失敗しました', '连接失败', 'Falló la conexión');
+  a('mt.locked', '랭크전은 일반대전 5승 후 열려요', 'Ranked opens after 5 casual wins', 'ランク戦はカジュアル5勝で解放', '普通对战5胜后开放排位赛', 'La clasificatoria se abre tras 5 victorias casuales');
+  a('net.lost', '연결이 끊겼어요. 이 경기는 기록되지 않아요', 'Connection lost. This match won\'t count', '接続が切れました。この試合は記録されません', '连接已断开，本场不计入记录', 'Conexión perdida. Esta partida no cuenta');
+  a('net.waiting', '다른 선수들의 결과를 기다리는 중…', 'Waiting for the others to finish…', '他の選手の結果を待っています…', '等待其他选手完成…', 'Esperando a los demás…');
+  a('rr.rp', '랭크 점수', 'Rank points', 'ランクポイント', '排位分', 'Puntos de rango');
+  a('rr.promoted', '{tier} 승급!', 'Promoted to {tier}!', '{tier}に昇格！', '晋升{tier}！', '¡Ascenso a {tier}!');
+  a('rr.demoted', '{tier}(으)로 강등', 'Dropped to {tier}', '{tier}に降格', '降至{tier}', 'Bajas a {tier}');
+  a('tier.bronze', '브론즈', 'Bronze', 'ブロンズ', '青铜', 'Bronce');
+  a('tier.silver', '실버', 'Silver', 'シルバー', '白银', 'Plata');
+  a('tier.gold', '골드', 'Gold', 'ゴールド', '黄金', 'Oro');
+  a('tier.platinum', '플래티넘', 'Platinum', 'プラチナ', '铂金', 'Platino');
+  a('tier.diamond', '다이아몬드', 'Diamond', 'ダイヤモンド', '钻石', 'Diamante');
+  a('tier.master', '마스터', 'Master', 'マスター', '大师', 'Maestro');
+  a('set.nick', '닉네임', 'Nickname', 'ニックネーム', '昵称', 'Apodo');
+  a('set.nickSave', '저장', 'Save', '保存', '保存', 'Guardar');
+  a('set.nickSaved', '닉네임을 저장했어요', 'Nickname saved', 'ニックネームを保存しました', '昵称已保存', 'Apodo guardado');
+  a('elev.btn', '엘리베이터', 'Elevator', 'エレベーター', '电梯', 'Ascensor');
+  a('elev.title', '엘리베이터', 'Elevator', 'エレベーター', '电梯', 'Ascensor');
+  a('elev.sub', '코인을 내고 높은 층에서 시작해요. 층수 보너스는 도착한 층부터 쌓여요.', 'Pay coins to start higher up. Floor bonus counts from where you arrive.', 'コインを払って高い階から開始。階数ボーナスは到着階から加算。', '花费金币从更高楼层开始。楼层奖励从到达楼层起计算。', 'Paga para empezar más arriba. El bono de pisos cuenta desde la llegada.');
+  a('elev.arrive', '{f}층 도착!', 'Arrived at floor {f}!', '{f}階に到着！', '到达{f}层！', '¡Llegaste al piso {f}!');
+
   // ---- abilities: name, description ----
   const ab = (id, names, descs) => { a('ab.' + id, ...names); a('abd.' + id, ...descs); };
   ab('spring', ['탄력 다리', 'Springy Legs', 'バネ足', '弹力腿', 'Piernas elásticas'], ['점프 높이 +6%', 'Jump height +6%', 'ジャンプ力+6%', '跳跃高度+6%', 'Salto +6%']);

@@ -115,6 +115,78 @@ function ledge() {
   return justUnder.on && !wayUnder.on && normal.on;
 }
 
+// 3c. Human-like jumps: count misses where the body visibly overlapped the platform
+//     (center within hw + 0.65, feet inside the 0.85-thick slab) but still fell through.
+function feltFalls() {
+  const rnd = S.mulberry(42), R = (a, b) => a + (b - a) * rnd();
+  let att = 0, landed = 0, felt = 0;
+  for (let seed = 1; seed <= 40; seed++) {
+    const gen = new S.Sim();
+    gen.reset(seed * 101, 0);
+    while (gen.genFloor < 90) gen._generateFloor();
+    for (let f = 1; f <= 85; f++) {
+      const a = gen.findGolden(f - 1), b = gen.findGolden(f);
+      const sim = new S.Sim();
+      sim.plats.length = 0;
+      const A = sim._plat(a.x, 0, a.hw, 0, 0, false), B = sim._plat(b.x, b.y - a.y, b.hw, 0, 1, false);
+      sim.last = { y: 1e9 };
+      sim.coins.length = 0;
+      sim.lavaY = -1e6;
+      const dir = Math.sign(S.wrapD(B.x - A.x)) || 1;
+      Object.assign(sim.p, { x: A.x + dir * A.hw * R(-0.3, 1), y: 0, vx: 0, vy: 0, grounded: true, ground: A });
+      sim.p.px = sim.p.x; sim.p.py = 0;
+      const hold = R(0.04, 0.45), delay = R(0, 0.18), stopAt = R(0, B.hw * 0.9);
+      att++;
+      let apex = -9, apexDx = 9, cross = false;
+      for (let n = 0; n < 300; n++) {
+        const t = n * C.DT, dx = S.wrapD(B.x - sim.p.x), oy = sim.p.y;
+        sim.step({ move: t > delay ? (Math.abs(dx) > stopAt ? Math.sign(dx) : 0) : 0, jump: t < hold });
+        const p = sim.p, adx = Math.abs(S.wrapD(p.x - B.x));
+        if (!p.grounded && oy >= B.y && p.y < B.y && adx <= B.hw + 0.65) cross = true;
+        if (p.y > apex) { apex = p.y; apexDx = adx - B.hw; }
+        if ((p.grounded && n > 3) || p.y < -3) break;
+      }
+      if (sim.p.grounded && sim.p.ground === B) { landed++; continue; }
+      if (cross || (apex < B.y && apex > B.y - 0.85 && apexDx <= 0.65)) felt++;
+    }
+  }
+  const pct = (felt / att) * 100;
+  log(`FELT FALLS: ${felt}/${att} jumps (${pct.toFixed(2)}%) looked on the platform but fell; landed ${landed}`);
+  return pct <= 1;
+}
+
+// 3d. Elevator start, online lava schedule, and remote-body collisions.
+function elevatorAndOnline() {
+  const sim = new S.Sim();
+  sim.reset(77, 0, { startFloor: 180 });
+  const q = sim.findGolden(180);
+  const elevOk = sim.floor === 180 && sim.p.grounded && sim.p.ground === q && Math.abs(sim.lavaY - (q.y + C.LAVA_START)) < 1e-6;
+  sim.started = true;
+  for (let i = 0; i < 240; i++) sim.step({ move: 0, jump: false });
+  const elevStill = !sim.dead && sim.floor === 180;
+
+  const runOnline = () => {
+    const s = new S.Sim();
+    s.reset(5, 0, { online: true, racers: [{ skin: S.SKINS[1], perk: S.perkFor(null), remote: true }] });
+    s.started = true;
+    for (let i = 0; i < 120 * 20; i++) s.step({ move: i % 200 < 100 ? 1 : -1, jump: i % 60 < 20 });
+    return s;
+  };
+  const o1 = runOnline(), o2 = runOnline();
+  const lavaOk = Math.abs(o1.lavaY - o1.lavaAt(o1.runTime)) < 1e-6 && Math.abs(o1.lavaY - o2.lavaY) < 1e-9;
+
+  const c = new S.Sim();
+  c.reset(9, 0, { online: true, racers: [{ skin: S.SKINS[2], perk: S.perkFor(null), remote: true }] });
+  const me = c.p, them = c.bodies[1];
+  Object.assign(them, { x: me.x + 0.5, y: me.y, vx: -6, vy: 0, grounded: true, ground: me.ground });
+  me.vx = 6;
+  const tx = them.x, tvx = them.vx;
+  c._collide();
+  const remoteOk = them.x === tx && them.vx === tvx && me.vx < 6;
+  log(`ELEVATOR: start 180F on golden=${elevOk}, still alive after 2s=${elevStill} | ONLINE lava fixed+deterministic=${lavaOk} | remote collision only moves me=${remoteOk}`);
+  return elevOk && elevStill && lavaOk && remoteOk;
+}
+
 // 4. Abilities change the physics the way their descriptions promise.
 function perks() {
   const top = (ab, presses) => {
@@ -192,6 +264,8 @@ setTimeout(() => {
     pass = reachability(20, 700) && pass;
     pass = bots() && pass;
     pass = ledge() && pass;
+    pass = feltFalls() && pass;
+    pass = elevatorAndOnline() && pass;
     pass = perks() && pass;
     pass = races() && pass;
   } catch (e) { pass = false; log('EXCEPTION ' + e.stack); }

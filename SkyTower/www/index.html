@@ -34,7 +34,7 @@
     </div>
     <div class="menu-actions">
       <button id="btnPlay" class="btn btn-play" data-i18n="menu.play"></button>
-      <button id="btnRace" class="btn btn-race"><span class="race-main"><svg viewBox="0 0 24 24"><path d="M5 3h2v18H5zm3 1h11l-2.5 4L19 12H8z"/></svg><span data-i18n="menu.race"></span></span><small id="mRaceSub"></small></button>
+      <button id="btnVersus" class="btn btn-race"><span class="race-main"><svg viewBox="0 0 24 24"><path d="M5 3h2v18H5zm3 1h11l-2.5 4L19 12H8z"/></svg><span data-i18n="menu.versus"></span></span><small id="mVersusSub"></small></button>
       <div class="menu-row">
         <button id="btnCustom" class="btn btn-sub"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4.2"/><path d="M4 21c.6-5 4-7.4 8-7.4s7.4 2.4 8 7.4z"/></svg><span data-i18n="menu.char"></span></button>
         <button id="btnShop" class="btn btn-sub"><svg viewBox="0 0 24 24"><path d="M5 9h14l-1.2 11.2H6.2zM8.5 9V7a3.5 3.5 0 0 1 7 0v2h-2V7a1.5 1.5 0 0 0-3 0v2z"/></svg><span data-i18n="menu.shop"></span></button>
@@ -72,6 +72,8 @@
       <span id="rRank" class="race-rank">1</span>
     </div>
     <div id="raceBoard"></div>
+    <button id="btnElev" class="elev-btn hidden"><span>🛗</span><b data-i18n="elev.btn"></b></button>
+    <div id="elevCounter" class="elev-counter hidden"><span id="elevFloor">0</span><small data-i18n="unit.floor"></small></div>
     <div id="bestTag" data-i18n="hud.bestTag"></div>
     <div id="lavaSlow" data-i18n="hud.lavaSlow"></div>
     <div id="banner"><small id="bSmall"></small><b id="bBig"></b><span id="bSub"></span></div>
@@ -119,6 +121,7 @@
       <h2 id="rrTitle" class="race-title"></h2>
       <ol id="rrList" class="race-list"></ol>
       <dl class="over-coins">
+        <div id="rrRp" class="rp-row hidden"><dt data-i18n="rr.rp"></dt><dd></dd></div>
         <div><dt data-i18n="race.rankReward"></dt><dd id="rrRank">0</dd></div>
         <div><dt data-i18n="over.picked"></dt><dd id="rrPicked">0</dd></div>
         <div class="total"><dt data-i18n="over.earned"></dt><dd><i class="coin"></i><span id="rrEarned">0</span></dd></div>
@@ -150,6 +153,8 @@
     <div class="panel settings-panel">
       <div class="panel-head"><h2 data-i18n="set.title"></h2><button id="btnSetClose" class="icon-btn" data-i18n-aria="common.close"><svg viewBox="0 0 24 24"><path d="M6.2 4.2L12 10l5.8-5.8 2 2L14 12l5.8 5.8-2 2L12 14l-5.8 5.8-2-2L10 12 4.2 6.2z"/></svg></button></div>
       <div class="scroll">
+        <h3 data-i18n="set.nick"></h3>
+        <div class="nick-row"><input id="sNick" type="text" maxlength="12" autocomplete="off" spellcheck="false"><button id="btnNickSave" class="btn btn-wide" data-i18n="set.nickSave"></button></div>
         <h3 data-i18n="set.lang"></h3>
         <div class="langs" id="sLang"></div>
         <h3 data-i18n="set.sound"></h3>
@@ -167,6 +172,38 @@
         <button id="btnReset" class="btn btn-wide btn-danger" data-i18n="set.reset"></button>
         <p class="credit" data-i18n="set.local"></p>
       </div>
+    </div>
+  </section>
+
+  <!-- VERSUS -->
+  <section id="versus" class="screen modal hidden">
+    <div class="panel narrow">
+      <div class="panel-head"><h2 data-i18n="vs.title"></h2><button id="btnVsClose" class="icon-btn" data-i18n-aria="common.close"><svg viewBox="0 0 24 24"><path d="M6.2 4.2L12 10l5.8-5.8 2 2L14 12l5.8 5.8-2 2L12 14l-5.8 5.8-2-2L10 12 4.2 6.2z"/></svg></button></div>
+      <button id="vsAi" class="vs-item"><span class="vs-icon">🤖</span><span class="vs-text"><b data-i18n="vs.ai"></b><small id="vsAiSub"></small></span></button>
+      <button id="vsCasual" class="vs-item"><span class="vs-icon">🌐</span><span class="vs-text"><b data-i18n="vs.casual"></b><small id="vsCasualSub"></small></span></button>
+      <button id="vsRanked" class="vs-item"><span class="vs-icon" id="vsRankIcon">🏆</span><span class="vs-text"><b data-i18n="vs.ranked"></b><small id="vsRankedSub"></small></span></button>
+      <p id="vsStatus" class="credit"></p>
+    </div>
+  </section>
+
+  <!-- MATCHMAKING -->
+  <section id="matching" class="screen modal hidden">
+    <div class="panel narrow match-panel">
+      <h2 id="mtTitle"></h2>
+      <div class="spinner"></div>
+      <p id="mtCount" class="mt-count"></p>
+      <p id="mtSub" class="credit"></p>
+      <button id="btnMtCancel" class="btn btn-wide btn-ghost" data-i18n="confirm.no"></button>
+    </div>
+  </section>
+
+  <!-- ELEVATOR -->
+  <section id="elevator" class="screen modal hidden">
+    <div class="panel narrow">
+      <div class="panel-head"><h2>🛗 <span data-i18n="elev.title"></span></h2><button id="btnElevClose" class="icon-btn" data-i18n-aria="common.close"><svg viewBox="0 0 24 24"><path d="M6.2 4.2L12 10l5.8-5.8 2 2L14 12l5.8 5.8-2 2L12 14l-5.8 5.8-2-2L10 12 4.2 6.2z"/></svg></button></div>
+      <p class="confirm-text" data-i18n="elev.sub"></p>
+      <div id="elevList" class="elev-list"></div>
+      <p class="credit"><i class="coin"></i> <span id="elevCoins">0</span></p>
     </div>
   </section>
 
@@ -192,10 +229,12 @@
   <div id="fatal" class="hidden"><div><h2 data-i18n="fatal.title"></h2><p data-i18n="fatal.text"></p></div></div>
 </div>
 
+<script src="js/config.js"></script>
 <script src="js/data.js"></script>
 <script src="js/i18n.js"></script>
 <script src="js/sim.js"></script>
 <script src="js/bot.js"></script>
+<script src="js/net.js"></script>
 <script src="js/gfx.js"></script>
 <script src="js/scene.js"></script>
 <script src="js/music.js"></script>

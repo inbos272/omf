@@ -79,7 +79,8 @@
     return {
       id, human, x: 0, y: 0, px: 0, py: 0, vx: 0, vy: 0,
       grounded: true, ground: null, coyote: 0, buffer: 0, held: false, forced: false,
-      boost: 0, lock: 0, shove: 0, bumpT: 0, face: 1, airJ: 0, shields: 0,
+      boost: 0, lock: 0, shove: 0, bumpT: 0, stompT: 0, face: 1, airJ: 0, shields: 0,
+      remote: false, name: null, slot: 0,
       floor: 0, floorT: 0, maxY: 0, coins: 0, coinFrac: 0, dead: false,
       perk: S.perkFor(null), skin: null, ab: null, bot: null, anim: null,
     };
@@ -109,7 +110,7 @@
     get maxY() { return this.p.maxY; }
     set maxY(v) { this.p.maxY = v; }
 
-    // opts: { perk, skin, ab, opening, racers: [{ skin, ab, perk, bot }] }
+    // opts: { perk, skin, ab, opening, startFloor, online, racers: [{ skin, ab, perk, bot, remote, name }] }
     reset(seed, bestFloor, opts) {
       opts = opts || {};
       while (this.plats.length) this.platPool.push(this.plats.pop());
@@ -122,6 +123,8 @@
       this.runTime = 0;
       this.started = false;
       this.race = !!opts.racers;
+      this.online = !!opts.online;
+      this.startFloor = 0;
       this.lavaY = C.LAVA_START;
       this.lavaV = 0;
       this.lavaMul = this.race ? 1 : (opts.perk ? opts.perk.lava : 1);
@@ -144,21 +147,73 @@
       p.perk = opts.perk || S.perkFor(null);
       p.skin = opts.skin || null;
       p.ab = opts.ab || null;
-      this._place(p, x0, first);
+      // Online, every client must agree where each slot starts, or bodies spawn inside each other.
+      const SLOT_X = [0, -1.9, 1.9, -3.8, 3.8];
+      const slotted = opts.mySlot !== undefined;
+      p.slot = slotted ? opts.mySlot : 0;
+      this._place(p, x0 + (slotted ? SLOT_X[opts.mySlot % 5] : 0), first);
       this.bodies.push(p);
       if (opts.racers) {
         const offs = [-3.8, -1.9, 1.9, 3.8];
         opts.racers.forEach((r, i) => {
+          const off = slotted && r.slot !== undefined ? SLOT_X[r.slot % 5] : offs[i % offs.length];
           const b = newBody(i + 1, false);
           b.perk = r.perk;
           b.skin = r.skin;
           b.ab = r.ab;
           b.bot = r.bot;
-          this._place(b, x0 + offs[i % offs.length], first);
+          b.remote = !!r.remote;
+          b.name = r.name || null;
+          b.slot = r.slot;
+          this._place(b, x0 + off, first);
           this.bodies.push(b);
         });
       }
       this._generate();
+      if (opts.startFloor) this._startAt(opts.startFloor);
+    }
+
+    // Elevator: same tower, but the run begins on the golden platform of a higher floor.
+    _startAt(f) {
+      while (this.genFloor < f + 2) this._generateFloor();
+      const q = this.findGolden(f);
+      if (!q) return;
+      const p = this.p;
+      this._place(p, q.x, q);
+      p.floor = f;
+      p.floorT = 0;
+      p.maxY = q.y;
+      this.startFloor = f;
+      this.lavaY = q.y + C.LAVA_START;
+      this._generate();
+    }
+
+    // Online lava follows one fixed schedule on every client: no rubber band, no slowdowns.
+    lavaAt(t) {
+      const R = S.RACE, v0 = R.v0, dv = R.vmax - R.v0, tau = R.tau;
+      const integral = (s) => v0 * s + dv * (s - tau * (1 - Math.exp(-s / tau)));
+      const early = Math.min(t, 3);
+      return C.LAVA_START + integral(t) - 0.5 * integral(early);
+    }
+
+    // A crumbling or bomb platform set off by someone in another client.
+    triggerRemote(floor, side) {
+      for (const q of this.plats) {
+        if (q.floor !== floor || q.side !== side || q.state !== 0) continue;
+        const d = S.difficulty(q.floor);
+        if (q.type === T.CRUMBLE) {
+          q.state = 1;
+          q.t = lerp(0.72, 0.46, d);
+          this.emit('crumble', q);
+        } else if (q.type === T.BOOM) {
+          q.state = 1;
+          q.t = lerp(1.25, 0.78, d);
+          q.fuse = q.t;
+          this.emit('fuse', q);
+        }
+        return true;
+      }
+      return false;
     }
 
     _place(b, x, q) {
@@ -323,6 +378,14 @@
     _land(p, q) {
       const k = p.perk;
       const impact = -p.vy;
+      // Caught by the edge: pull the body in so its feet visibly stand on the platform.
+      const dx = wrapD(p.x - q.x), lim = q.hw + 0.15;
+      if (Math.abs(dx) > lim) {
+        const nx = wrapX(q.x + Math.sign(dx) * lim);
+        p.px += nx - p.x;
+        p.x = nx;
+        p.vx *= 0.5;
+      }
       p.y = q.y;
       p.vy = 0;
       p.grounded = true;
@@ -340,7 +403,7 @@
       }
       if (q.beacon) {
         q.beacon = false;
-        this.slowT = Math.max(this.slowT, C.BEACON_SLOW_T * k.beacon);
+        if (!this.online) this.slowT = Math.max(this.slowT, C.BEACON_SLOW_T * k.beacon);
         this.emit('beacon', q, 0, p);
       }
       const d = S.difficulty(q.floor);
@@ -358,11 +421,13 @@
         q.state = 1;
         q.t = lerp(0.72, 0.46, d) * k.fuse;
         this.emit('crumble', q, 0, p);
+        this.emit('trigger', q, 0, p);
       } else if (q.type === T.BOOM && q.state === 0) {
         q.state = 1;
         q.t = lerp(1.25, 0.78, d) * k.fuse;
         q.fuse = q.t;
         this.emit('fuse', q, 0, p);
+        this.emit('trigger', q, 0, p);
       }
     }
 
@@ -376,7 +441,7 @@
       this._gone(q);
       let humanHit = false;
       for (const p of this.bodies) {
-        if (p.dead) continue;
+        if (p.dead || p.remote) continue;
         const dx = wrapD(p.x - q.x);
         if (Math.abs(dx) >= q.hw + 1.4 || Math.abs(p.y - q.y) >= 2.6) continue;
         p.grounded = false;
@@ -429,7 +494,12 @@
         }
       }
       const anyAlive = this.race ? this.bodies.some((b) => !b.dead) : !this.p.dead;
-      if (this.started && anyAlive) {
+      if (this.started && anyAlive && this.online) {
+        this.runTime += dt;
+        const y = this.lavaAt(this.runTime);
+        this.lavaV = (y - this.lavaY) / dt;
+        this.lavaY = y;
+      } else if (this.started && anyAlive) {
         this.runTime += dt;
         const R = S.RACE;
         const v0 = this.race ? R.v0 : C.LAVA_V0, vmax = this.race ? R.vmax : C.LAVA_VMAX, tau = this.race ? R.tau : C.LAVA_TAU;
@@ -560,6 +630,8 @@
     }
 
     // Rivals push each other on contact; landing on a head bounces you up.
+    // Remote bodies (other clients' players) are never moved here: each client applies only
+    // its own half of a collision, so both sides together add up to the full response.
     _collide() {
       const B = this.bodies;
       for (let i = 0; i < B.length; i++) {
@@ -567,24 +639,24 @@
         if (a.dead) continue;
         for (let j = i + 1; j < B.length; j++) {
           const b = B[j];
-          if (b.dead) continue;
+          if (b.dead || (a.remote && b.remote)) continue;
           const dx = wrapD(b.x - a.x), dy = b.y - a.y;
           if (Math.abs(dx) > 0.85 || Math.abs(dy) > 1.15) continue;
           if (dy > 0.75 && b.vy < 0) { this._stomp(b, a); continue; }
           if (-dy > 0.75 && a.vy < 0) { this._stomp(a, b); continue; }
           const s = dx >= 0 ? 1 : -1, overlap = 0.85 - Math.abs(dx);
-          a.x = wrapX(a.x - s * overlap * 0.5);
-          b.x = wrapX(b.x + s * overlap * 0.5);
+          if (!a.remote) a.x = wrapX(a.x - s * overlap * 0.5);
+          if (!b.remote) b.x = wrapX(b.x + s * overlap * 0.5);
           const closing = (a.vx - b.vx) * s;
           if (closing > 1 && a.bumpT <= 0 && b.bumpT <= 0) {
             const imp = closing * 0.8 + 3;
-            a.vx -= s * imp * 0.6;
-            b.vx += s * imp * 0.6;
+            if (!a.remote) a.vx -= s * imp * 0.6;
+            if (!b.remote) b.vx += s * imp * 0.6;
             a.shove = b.shove = 0.28;
             a.bumpT = b.bumpT = 0.25;
             if (imp > 7) {
               for (const o of [a, b]) {
-                if (!o.grounded) continue;
+                if (!o.grounded || o.remote) continue;
                 o.grounded = false;
                 o.ground = null;
                 o.vy = 5;
@@ -597,14 +669,20 @@
     }
 
     _stomp(top, under) {
-      top.vy = 14;
-      top.grounded = false;
-      top.ground = null;
-      top.forced = false;
-      top.airJ = top.perk.airJumps;
-      under.lock = 0.35;
-      under.shove = 0.2;
-      if (!under.grounded) under.vy = Math.min(under.vy, -6);
+      if (top.stompT > this.time) return; // one stomp per contact
+      top.stompT = this.time + 0.3;
+      if (!top.remote) {
+        top.vy = 14;
+        top.grounded = false;
+        top.ground = null;
+        top.forced = false;
+        top.airJ = top.perk.airJumps;
+      }
+      if (!under.remote) {
+        under.lock = 0.35;
+        under.shove = 0.2;
+        if (!under.grounded) under.vy = Math.min(under.vy, -6);
+      }
       this.emit('stomp', top, 0, under);
     }
 
@@ -612,7 +690,7 @@
       const dt = C.DT;
       this.time += dt;
       for (const b of this.bodies) {
-        if (b.dead) continue;
+        if (b.dead || b.remote) continue;
         const bi = b.human ? inp : this.started ? b.bot.update(this, dt, b) : IDLE;
         this._stepBody(b, bi);
       }
@@ -632,7 +710,7 @@
         }
       }
       for (const b of this.bodies) {
-        if (b.dead || b.y > this.lavaY + 0.1) continue;
+        if (b.dead || b.remote || b.y > this.lavaY + 0.1) continue;
         if (b.shields > 0) {
           b.shields--;
           b.y = this.lavaY + 0.2;

@@ -186,16 +186,19 @@
     updateHud();
   };
 
-  // Four rivals with distinct looks and random abilities; one of them is always strong.
+  // Four rivals with distinct looks and random abilities. They get stronger with every AI-race win;
+  // one of them always sits at the top of the current band.
   function makeRacers(mySkin) {
     const pool = S.SKINS.filter((s) => s.id !== mySkin.id);
-    // Tuned so a decent human usually lands on the podium and has to fight for first.
-    const skills = [0.2 + Math.random() * 0.15, 0.32 + Math.random() * 0.15, 0.44 + Math.random() * 0.15, 0.56 + Math.random() * 0.14];
+    const band = S.aiSkillBand(Math.min(S.Save.data.raceWins, 9));
+    const skills = [band.hi];
+    for (let i = 1; i < S.RACE.ai; i++) skills.push(band.lo + (band.hi - band.lo) * Math.random());
     const racers = [];
     for (let i = 0; i < S.RACE.ai; i++) {
       const skin = pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
       const ab = S.AI_ABILITIES[Math.floor(Math.random() * S.AI_ABILITIES.length)];
-      const bot = new S.Bot(skills.splice(Math.floor(Math.random() * skills.length), 1)[0], newSeed(), 0.15 + Math.random() * 0.5);
+      const skill = skills.splice(Math.floor(Math.random() * skills.length), 1)[0];
+      const bot = new S.Bot(skill, newSeed(), band.aggro * (0.6 + Math.random() * 0.6));
       racers.push({ skin, ab, perk: S.perkFor(ab), bot });
     }
     return racers;
@@ -218,8 +221,161 @@
   };
 
   G.restart = () => (G.mode === 'race' ? G.startRace() : G.startRun());
+  G.again = () => (online() ? G.startOnline(G.mode) : G.startRace());
+
+  // ---------- elevator ----------
+  G.elevator = (f) => {
+    const e = S.ELEVATOR.find((x) => x.floor === f), d = S.Save.data;
+    if (!e || d.coins < e.price || G.mode !== 'solo' || sim.started) return;
+    d.coins -= e.price;
+    S.Save.save();
+    const fromY = sim.p.y;
+    sim.reset(sim.seed, d.best, Object.assign(loadout(), { startFloor: f })); // same tower, higher start
+    G.state = 'elevator';
+    G.elevF = f;
+    input.enabled = false;
+    input.reset();
+    ui.elevatorButton(false);
+    scene.elevatorStart(fromY, sim.p.y, sim.p.x);
+    audio.play('elevHum');
+    G.vibrate(30);
+  };
+
+  function elevatorDone() {
+    G.state = 'play';
+    input.enabled = true;
+    input.reset();
+    ui.elevatorCounter(null);
+    const e = S.envFor(G.elevF);
+    G.env = e;
+    scene.setEnv(e, true);
+    audio.setMusicEnv(e);
+    audio.play('ding');
+    ui.banner(S.ENVS[e].en, t('elev.arrive', { f: G.elevF }), t('env.' + S.ENVS[e].id));
+    scene.celebrate([0.6, 0.9, 1]);
+    updateHud();
+  }
+
+  // ---------- versus / online ----------
+  const net = (G.net = new S.Net());
+  const online = () => G.mode === 'casual' || G.mode === 'ranked';
+  let serverState = 'none';
+
+  G.openVersus = async () => {
+    serverState = net.configured ? 'checking' : 'none';
+    ui.versus({ server: serverState });
+    if (!net.configured) return;
+    const ok = await net.health();
+    serverState = ok ? 'ok' : 'offline';
+    if (ok) {
+      const p = await net.profile(S.Save.data.pid);
+      if (p) Object.assign(S.Save.data, { casualWins: p.casualWins, rp: p.rp, tier: p.tier }), S.Save.save();
+    }
+    if (!document.getElementById('versus').classList.contains('hidden')) ui.versus({ server: serverState });
+  };
+
+  G.startOnline = (mode) => {
+    if (serverState !== 'ok') return;
+    audio.unlock();
+    const lo = loadout(), d = S.Save.data;
+    G.mode = mode;
+    G.state = 'matching';
+    ui.matching(mode, 'queue', 1, 0);
+    net.find(mode, { pid: d.pid, name: d.nick, skin: lo.skin.id, ab: lo.ab || '' }, {
+      queue: (n, fillIn) => { if (G.state === 'matching') ui.matching(mode, 'queue', n, fillIn); },
+      hello: (msg) => onlineHello(msg, lo),
+      host: () => S.onlineTakeover(sim, net),
+      event: (m) => { if (m.k === 'tr') sim.triggerRemote(m.f, !!m.sd); },
+      end: (m) => onlineEnd(m),
+      error: (code) => {
+        if (G.state !== 'matching') return;
+        ui.matching(mode, 'error', 0, 0);
+        if (code === 'locked') ui.toast(t('mt.locked'), 2400);
+      },
+      lost: () => {
+        if (G.state === 'matching') { ui.matching(mode, 'error', 0, 0); return; }
+        G.netLost = true;
+        ui.toast(t('net.lost'), 3000);
+      },
+    });
+  };
+
+  G.cancelOnline = () => {
+    net.cancel();
+    ui.overlay('matching', false);
+    G.toMenu(false);
+  };
+
+  function onlineHello(msg, lo) {
+    ui.matching(G.mode, 'joining', 0, 0);
+    const racers = S.onlineRacers(msg, net.slot, net.isHost);
+    sim.reset(msg.seed, 0, Object.assign(lo, { racers, online: true, mySlot: net.slot }));
+    scene.resetRun(msg.seed);
+    beginHud(G.mode);
+    ui.overlay('matching', false);
+    ui.raceStart(sim.bodies);
+    G.state = 'raceIntro';
+    G.myRank = 0;
+    G.lastCount = 0;
+    G.netLost = false;
+    G.sentResult = false;
+    G.sentAi = false;
+    G.endMsg = null;
+    ui.banner(t('vs.' + G.mode), t('race.goal'), t('race.tip'));
+  }
+
+  // Seconds since the shared start, on the server's clock.
+  const onlineElapsed = () => (net.serverNow() - net.startAt) / 1000;
+
+  function sendOnlineResults() {
+    const elapsed = onlineElapsed();
+    if (!G.sentResult && (sim.dead || elapsed >= S.RACE.dur)) {
+      G.sentResult = true;
+      net.sendResult(sim.p);
+    }
+    if (net.isHost && !G.sentAi && elapsed >= S.RACE.dur) {
+      G.sentAi = true;
+      net.sendResult(sim.p, sim.bodies.filter((b) => !b.human && net.roster[b.slot] && net.roster[b.slot].ai));
+    }
+  }
+
+  function onlineEnd(m) {
+    G.endMsg = m;
+    if (G.state === 'play' || G.state === 'waiting' || G.state === 'dying') showOnlineResult();
+  }
+
+  function showOnlineResult() {
+    const m = G.endMsg;
+    const d = S.Save.data;
+    const bySlot = {};
+    for (const b of sim.bodies) bySlot[b.slot] = b;
+    const order = m
+      ? m.order.map((o) => Object.assign(bySlot[o.slot] || {}, { floor: o.floor, dc: o.dc }))
+      : raceOrder();
+    const rank = order.indexOf(sim.p) + 1;
+    const rankReward = S.RACE.rewards[rank - 1] || 0, picked = sim.coinCount, earned = rankReward + picked;
+    d.coins += earned;
+    let rp = null;
+    const prof = m && m.profiles && m.profiles[net.slot];
+    if (prof) {
+      if (G.mode === 'ranked') rp = { delta: prof.delta, rp: prof.rp, tier: prof.tier, prevTier: d.tier };
+      Object.assign(d, { casualWins: prof.casualWins, rp: prof.rp, tier: prof.tier });
+    }
+    S.Save.save();
+    G.state = 'over';
+    sim.started = false;
+    input.enabled = false;
+    input.reset();
+    net.close();
+    ui.raceOver({ reason: 'time', order, rank, rankReward, picked, earned, rp, note: m ? '' : t('net.lost') });
+    if (rank <= 3) {
+      audio.play('reward');
+      scene.celebrate(rank === 1 ? [1, 0.82, 0.3] : [0.6, 0.85, 1]);
+    }
+  }
 
   G.pause = () => {
+    if (online()) return; // the race keeps going for everyone else
     if (G.state !== 'play' && G.state !== 'countdown') return;
     G.state = 'paused';
     input.enabled = false;
@@ -264,7 +420,8 @@
     const d = S.Save.data;
     const prevBest = d.best;
     const floor = sim.floor;
-    const picked = sim.coinCount, bonus = Math.round(floor * 2 * sim.p.perk.bonus), earned = picked + bonus;
+    // Elevator runs only earn the floor bonus for floors climbed after arriving.
+    const picked = sim.coinCount, bonus = Math.round((floor - sim.startFloor) * 2 * sim.p.perk.bonus), earned = picked + bonus;
     d.coins += earned;
     const newBest = floor > prevBest;
     if (newBest) d.best = floor;
@@ -366,7 +523,7 @@
       const env = S.ENVS[e];
       scene.setEnv(e);
       scene.celebrate([0.5, 0.8, 1]);
-      sim.slowT = Math.max(sim.slowT, C.ENV_SLOW_T);
+      if (!online()) sim.slowT = Math.max(sim.slowT, C.ENV_SLOW_T);
       audio.setMusicEnv(e);
       audio.play('env');
       ui.banner(env.en, t('env.' + env.id), t('env.sub', { f: env.from }));
@@ -394,10 +551,15 @@
     switch (G.state) {
       case 'play':
       case 'dying':
+      case 'waiting':
       case 'menu':
       case 'coll':
       case 'over':
         simDt = dt;
+        break;
+      case 'elevator':
+        if (scene.elevatorTick(dt)) elevatorDone();
+        else ui.elevatorCounter(Math.round(scene.elevatorProgress() * G.elevF));
         break;
       case 'countdown':
         G.countT -= dt;
@@ -406,6 +568,7 @@
         break;
       case 'raceIntro': {
         G.countT -= dt;
+        if (online()) G.countT = (net.startAt - net.serverNow()) / 1000; // everyone starts together
         const n = Math.ceil(G.countT);
         if (G.countT <= 3 && n !== G.lastCount && n > 0) {
           G.lastCount = n;
@@ -431,6 +594,11 @@
     let inp = idleInput;
     if (G.state === 'play') inp = G.bot ? G.bot.update(sim, C.DT) : input.poll();
 
+    const isOnline = online() && sim.online;
+    if (isOnline && sim.started && G.state !== 'over') {
+      // Lava follows the shared clock, so every client sees it at the same height.
+      sim.runTime = Math.max(0, onlineElapsed() - Math.floor((acc + simDt) / C.DT) * C.DT);
+    }
     acc += simDt;
     while (acc >= C.DT) {
       sim.step(inp);
@@ -438,23 +606,36 @@
       if (G.mode === 'race' && (G.state === 'play' || G.state === 'dying')) G.raceT -= C.DT;
       if (G.bot && G.state === 'play') inp = G.bot.update(sim, C.DT);
     }
+    if (isOnline && G.state !== 'over') {
+      net.update(sim, dt, (b) => scene.onEvent('dead', null, 0, b));
+      G.raceT = S.RACE.dur - onlineElapsed();
+      sendOnlineResults();
+      // Out of the race but the others are still climbing: spectate until the server reports.
+      if (G.state === 'play' && G.raceT <= 0) G.state = 'waiting';
+      if (G.state === 'waiting' && (G.endMsg || G.netLost || G.raceT < -12)) showOnlineResult();
+    }
 
     if (G.mode === 'race' && G.state === 'play' && G.raceT <= 0) finishRace('time');
     if (G.state === 'dying') {
       G.dyingT -= dt;
       if (G.dyingT <= 0) {
         if (G.mode === 'race') finishRace('dead');
-        else {
+        else if (online()) {
+          G.state = 'waiting';
+          ui.toast(t('net.waiting'), 4000);
+        } else {
           G.state = 'over';
           finishRun(true);
         }
       }
     }
 
+    if (G.mode === 'solo') ui.elevatorButton(G.state === 'play' && !sim.started && sim.startFloor === 0);
+
     const paused = G.state === 'paused' || G.state === 'countdown';
-    const inPlay = G.state === 'play' || G.state === 'dying' || paused || G.state === 'over' || G.state === 'raceIntro';
+    const inPlay = G.state === 'play' || G.state === 'dying' || G.state === 'waiting' || paused || G.state === 'over' || G.state === 'raceIntro';
     scene.render(paused ? 0 : dt, paused ? 1 : acc / C.DT, {
-      camMode: G.state === 'coll' ? (G.preview.theme ? 'theme' : 'custom') : G.state === 'menu' ? 'menu' : 'play',
+      camMode: G.state === 'coll' ? (G.preview.theme ? 'theme' : 'custom') : G.state === 'menu' ? 'menu' : G.state === 'elevator' ? 'elevator' : 'play',
       skin: G.preview.skin,
       theme: G.preview.theme,
       dragYaw: G.dragYaw,
@@ -468,7 +649,7 @@
       audio.setDanger(live ? Math.max(0, Math.min(1, 1 - gap / 12)) : 0);
       ui.lava(live ? Math.max(0, Math.min(1, 1 - (gap - 1) / 8)) : 0, sim.slowT > 0 && !sim.dead);
       ui.bestTag(live && G.mode === 'solo' ? scene.bestScreen : null);
-      if (G.mode === 'race' && G.state !== 'over') {
+      if (G.mode !== 'solo' && G.state !== 'over') {
         const order = raceOrder();
         ui.raceHud(order, G.raceT);
         ui.raceTags(scene.tagScreens);

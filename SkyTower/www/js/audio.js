@@ -7,6 +7,7 @@
     jump: 'jump', land: 'land', coin: 'coin', crumble: 'collapse', collapse: 'collapse', warn: 'warn', over: 'over',
     boom: 'fx', pad: 'fx', speed: 'fx', beacon: 'fx', ui: 'fx', reward: 'fx', env: 'fx', fuse: 'fx', buy: 'fx',
     airjump: 'jump', bump: 'fx', stomp: 'fx', shield: 'fx', count: 'fx', go: 'fx', overtake: 'fx',
+    elevHum: 'fx', ding: 'fx',
   };
 
   class Sound {
@@ -180,6 +181,17 @@
         case 'go':
           this._tone(cat, 'square', 990, 990, 0.32, 0.16);
           this._tone(cat, 'triangle', 1320, 1320, 0.32, 0.18, 0.02);
+          break;
+        case 'elevHum':
+          // Rising whoosh for the ride up, then the arrival ding comes separately.
+          this._tone(cat, 'sawtooth', 55, 220, 3.4, 0.12, 0, 0.4);
+          this._tone(cat, 'sine', 110, 440, 3.4, 0.16, 0, 0.4);
+          this._noise(cat, 3.2, 0.12, 400, 5000, 0, 1.5);
+          break;
+        case 'ding':
+          this._tone(cat, 'sine', 1319, 1319, 1.1, 0.3);
+          this._tone(cat, 'sine', 1047, 1047, 1.4, 0.3, 0.32);
+          this._tone(cat, 'triangle', 2637, 2637, 0.5, 0.06);
           break;
         case 'overtake':
           this._tone(cat, 'triangle', 784, 784, 0.09, 0.22);

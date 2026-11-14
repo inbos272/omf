@@ -1,0 +1,20 @@
+name = "sky-tower"
+main = "src/index.js"
+compatibility_date = "2025-04-01"
+
+[[durable_objects.bindings]]
+name = "MATCH"
+class_name = "Matchmaker"
+
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "Room"
+
+[[durable_objects.bindings]]
+name = "LEDGER"
+class_name = "Ledger"
+
+# SQLite-backed Durable Objects work on the Workers Free plan.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Matchmaker", "Room", "Ledger"]

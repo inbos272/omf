@@ -1,0 +1,251 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Server tests</title>
+<pre id="out" style="font:13px monospace;white-space:pre-wrap">running…</pre>
+<script src="../www/js/data.js"></script>
+<script src="../www/js/sim.js"></script>
+<script src="../www/js/bot.js"></script>
+<script src="../www/js/net.js"></script>
+<script type="module">
+// Runs the real Durable Object classes and the real game client (net.js + sim.js + bot.js)
+// against an in-page fake of the Cloudflare runtime: storage, alarms, WebSocket pairs.
+import * as rules from '../server/src/rules.js';
+import { Matchmaker } from '../server/src/matchmaker.js';
+import { Room } from '../server/src/room.js';
+import { Ledger } from '../server/src/ledger.js';
+
+const S = window.SKY, C = S.CFG, lines = [];
+const log = (s) => lines.push(s);
+// Let pending microtasks and a few macrotasks run (Response bodies resolve on tasks). MessageChannel
+// yields are much faster than setTimeout(0), which matters when the race loop flushes ~1,400 times.
+const mc = new MessageChannel(), waiters = [];
+mc.port1.onmessage = () => { const w = waiters.shift(); if (w) w(); };
+const task = () => new Promise((r) => { waiters.push(r); mc.port2.postMessage(0); });
+const flush = async () => { for (let i = 0; i < 3; i++) { for (let j = 0; j < 20; j++) await null; await task(); } };
+
+// ---------- fake runtime ----------
+let clock = 1700000000000;
+class Storage {
+  constructor() { this.map = new Map(); this.alarm = null; }
+  async get(k) { const v = this.map.get(k); return v === undefined ? undefined : structuredClone(v); }
+  async put(k, v) { this.map.set(k, structuredClone(v)); }
+  async setAlarm(t) { this.alarm = t; }
+}
+class Ctx {
+  constructor() { this.storage = new Storage(); this.sockets = []; }
+  acceptWebSocket(ws) { this.sockets.push(ws); }
+  getWebSockets() { return this.sockets.filter((s) => !s.closed); }
+}
+function pair(owner) {
+  const server = { closed: false, att: null }, client = { closed: false, onmessage: null, onclose: null, onerror: null };
+  server.send = (d) => { if (!client.closed) queueMicrotask(() => client.onmessage && client.onmessage({ data: d })); };
+  server.close = () => {
+    if (server.closed) return;
+    server.closed = client.closed = true;
+    queueMicrotask(() => { client.onclose && client.onclose({}); owner().webSocketClose(server); });
+  };
+  server.serializeAttachment = (v) => { server.att = v === null ? null : structuredClone(v); };
+  server.deserializeAttachment = () => (server.att ? structuredClone(server.att) : null);
+  client.send = (d) => { if (!server.closed) queueMicrotask(() => owner().webSocketMessage(server, d)); };
+  client.close = () => {
+    if (client.closed) return;
+    server.closed = client.closed = true;
+    queueMicrotask(() => { client.onclose && client.onclose({}); owner().webSocketClose(server); });
+  };
+  return { server, client };
+}
+function makeEnv() {
+  const env = { NOW: () => clock };
+  let n = 0;
+  const ns = (Cls) => {
+    const inst = new Map();
+    return {
+      inst,
+      idFromName: (name) => ({ name, toString: () => name }),
+      newUniqueId: () => { const name = 'room-' + ++n; return { name, toString: () => name }; },
+      idFromString: (name) => ({ name, toString: () => name }),
+      get(id) {
+        if (!inst.has(id.name)) inst.set(id.name, new Cls(new Ctx(), env));
+        const o = inst.get(id.name);
+        return { fetch: (u, init) => o.fetch(new Request(u, init)), o };
+      },
+    };
+  };
+  env.LEDGER = ns(Ledger);
+  env.MATCH = ns(Matchmaker);
+  env.ROOM = ns(Room);
+  // What the Worker + DO fetch handlers do for a WebSocket upgrade, minus the 101 response.
+  env.socket = (url) => {
+    const u = new URL(url), q = u.searchParams;
+    if (u.pathname === '/play') {
+      const mm = env.MATCH.get(env.MATCH.idFromName(q.get('mode'))).o;
+      const p = pair(() => mm);
+      queueMicrotask(() => mm.join(p.server, { mode: q.get('mode'), pid: q.get('pid'), name: rules.sanitizeName(q.get('name')), skin: q.get('skin'), ab: q.get('ab') }));
+      return p.client;
+    }
+    const room = env.ROOM.get(env.ROOM.idFromString(q.get('id'))).o;
+    const p = pair(() => room);
+    queueMicrotask(() => room.join(p.server, q.get('pid'), q.get('token')));
+    return p.client;
+  };
+  return env;
+}
+
+// ---------- a headless game client, following the same steps as main.js ----------
+function makeClient(env, name, skin, skill) {
+  const c = { name, skin, ended: null, lost: false, hosted: false, queueSeen: 0, events: 0 };
+  c.net = new S.Net({ baseUrl: 'https://fake', socketFactory: env.socket, now: () => clock });
+  c.me = { pid: 'pid-' + name, name, skin, ab: '' };
+  c.bot = new S.Bot(skill, name.length * 31 + 7, 0.3);
+  c.handlers = {
+    queue: () => { c.queueSeen++; },
+    hello: (msg) => {
+      c.sim = new S.Sim((ev, a) => { if (ev === 'trigger') c.net.sendEvent({ k: 'tr', f: a.floor, sd: a.side ? 1 : 0 }); });
+      const racers = S.onlineRacers(msg, c.net.slot, c.net.isHost);
+      c.sim.reset(msg.seed, 0, { perk: S.perkFor(null), skin: S.SKINS[0], ab: null, online: true, racers, mySlot: c.net.slot });
+      c.hosted = c.net.isHost;
+    },
+    host: () => { if (c.sim) S.onlineTakeover(c.sim, c.net); },
+    event: (m) => { if (m.k === 'tr' && c.sim) { c.sim.triggerRemote(m.f, !!m.sd); c.events++; } },
+    end: (m) => { c.ended = m; },
+    error: (code) => { c.error = code; },
+    lost: () => { c.lost = true; },
+  };
+  c.sent = false;
+  c.aiSent = false;
+  return c;
+}
+
+async function race(env, clients, opts) {
+  opts = opts || {};
+  const dt = C.DT;
+  const startAt = clients[0].net.startAt;
+  let maxGap = 0;
+  const total = Math.ceil((startAt - clock) / 1000 / dt + (S.RACE.dur + 2) / dt);
+  for (let step = 0; step < total; step++) {
+    clock += dt * 1000;
+    const elapsed = (clock - startAt) / 1000;
+    for (const c of clients) {
+      if (c.dropped || !c.sim) continue;
+      if (elapsed >= 0 && !c.sim.started) c.sim.started = true;
+      if (!c.sim.started) continue;
+      c.sim.runTime = Math.max(0, elapsed - dt);
+      c.sim.step(c.sim.dead ? { move: 0, jump: false } : c.bot.update(c.sim, dt));
+      c.net.update(c.sim, dt);
+      if (!c.sent && (c.sim.dead || elapsed >= S.RACE.dur)) {
+        c.sent = true;
+        c.net.sendResult(c.sim.p);
+      }
+      if (c.net.isHost && !c.aiSent && elapsed >= S.RACE.dur) {
+        c.aiSent = true;
+        c.net.sendResult(c.sim.p, c.sim.bodies.filter((b) => !b.human && c.net.roster[b.slot].ai));
+      }
+    }
+    if (opts.dropAt && elapsed >= opts.dropAt && !opts.dropped) {
+      opts.dropped = true;
+      const h = clients.find((c) => c.net.isHost);
+      h.dropped = true;
+      h.net.close();
+    }
+    // How far apart do two clients see the same player? (sync quality)
+    if (step % 120 === 0 && elapsed > 2 && elapsed < 80 && clients.length > 1 && !clients[0].dropped && !clients[1].dropped) {
+      const a = clients[0], b = clients[1];
+      const ghost = b.sim.bodies.find((x) => x.slot === a.net.slot);
+      if (ghost && !a.sim.dead && !ghost.dead) maxGap = Math.max(maxGap, Math.hypot(S.wrapD(ghost.x - a.sim.p.x), ghost.y - a.sim.p.y));
+    }
+    if (step % 8 === 0) await flush();
+  }
+  for (let i = 0; i < 20; i++) await flush();
+  return maxGap;
+}
+
+// ---------- tests ----------
+function unitRules() {
+  const ok = [
+    rules.tierFor(0) === 'bronze', rules.tierFor(299) === 'bronze', rules.tierFor(300) === 'silver', rules.tierFor(2600) === 'master',
+    rules.rpDelta(1, 0) === 40, rules.rpDelta(5, 10) === -10, rules.rpDelta(5, 500) === -20,
+    rules.orderResults([{ slot: 0, floor: 5, floorT: 3 }, { slot: 1, floor: 9, floorT: 9 }, { slot: 2, floor: 9, floorT: 4 }, { slot: 3, dc: true, floor: 50 }]).map((e) => e.slot).join() === '2,1,0,3',
+    rules.pickGroup([{ rp: 0, joined: 0 }], 5000, 'casual') === null,
+    rules.pickGroup([{ rp: 0, joined: 0 }], 10000, 'casual').ai === 4,
+    rules.pickGroup(Array.from({ length: 6 }, (_, i) => ({ rp: i * 100, joined: i })), 1, 'casual').players.length === 5,
+    rules.sanitizeName('  <b>Hi\u0001</b>  ') === 'bHi/b', rules.sanitizeName('') === 'Climber',
+  ];
+  log(`RULES: ${ok.filter(Boolean).length}/${ok.length} checks pass`);
+  return ok.every(Boolean);
+}
+
+async function casualMatch() {
+  const env = makeEnv();
+  const clients = [makeClient(env, 'Ann', 'mint', 0.8), makeClient(env, 'Bo', 'cat', 0.6), makeClient(env, 'Cy', 'frog', 0.5)];
+  for (const c of clients) c.net.find('casual', c.me, c.handlers);
+  await flush();
+  const queued = clients.every((c) => c.queueSeen > 0);
+  clock += 10500;
+  await env.MATCH.get(env.MATCH.idFromName('casual')).o.alarm();
+  for (let i = 0; i < 10; i++) await flush();
+  const joined = clients.every((c) => c.sim && c.net.phase === 'room');
+  const roster = clients[0].net.roster;
+  const hosts = clients.filter((c) => c.net.isHost).length;
+  const maxGap = await race(env, clients);
+  const ends = clients.filter((c) => c.ended).length;
+  const order = clients[0].ended ? clients[0].ended.order : [];
+  const winnerSlot = order.length ? order[0].slot : -1;
+  const winner = clients.find((c) => c.net.slot === winnerSlot);
+  let ledgerOk = true;
+  if (winner) {
+    const prof = await env.LEDGER.get(env.LEDGER.idFromName('global')).o.get(winner.me.pid);
+    ledgerOk = prof.casualWins === 1;
+  }
+  const sameOrder = clients.every((c) => c.ended && JSON.stringify(c.ended.order) === JSON.stringify(order));
+  // Every client must agree on where each slot started (no bodies spawning inside each other).
+  const humansClimbed = clients.every((c) => order.find((o) => o.slot === c.net.slot).floor >= 5);
+  log(`CASUAL: queued=${queued} joined=${joined} roster=${roster.length} (AI ${roster.filter((r) => r.ai).length}) hosts=${hosts} | ghost sync max gap ${maxGap.toFixed(2)} | end msgs ${ends}/3, same order=${sameOrder}, winner ${winner ? winner.name : 'AI'} casualWins ok=${ledgerOk}`);
+  log(`  order: ${order.map((o) => `${o.slot}:${o.floor}${o.dc ? 'dc' : ''}`).join(' ')} | trigger events relayed ${clients.reduce((s, c) => s + c.events, 0)}`);
+  // 120 ms interpolation delay at up to ~27 u/s (bounce pads) bounds how far a ghost can trail.
+  return queued && joined && roster.length === 5 && hosts === 1 && maxGap < 4 && ends === 3 && sameOrder && ledgerOk && humansClimbed;
+}
+
+async function rankedHostDrop() {
+  const env = makeEnv();
+  const ledger = env.LEDGER.get(env.LEDGER.idFromName('global')).o;
+  for (const n of ['Dee', 'Eli']) await ledger.ctx.storage.put('p:pid-' + n, { pid: 'pid-' + n, name: n, rp: 650, casualWins: 5, rankedGames: 0 });
+  const locked = makeClient(env, 'Fin', 'bot', 0.5);
+  locked.net.find('ranked', locked.me, locked.handlers);
+  await flush();
+  const lockOk = locked.error === 'locked';
+  const clients = [makeClient(env, 'Dee', 'king', 0.7), makeClient(env, 'Eli', 'ninja', 0.7)];
+  for (const c of clients) c.net.find('ranked', c.me, c.handlers);
+  await flush();
+  clock += 10500;
+  await env.MATCH.get(env.MATCH.idFromName('ranked')).o.alarm();
+  for (let i = 0; i < 10; i++) await flush();
+  const hostBefore = clients.find((c) => c.net.isHost);
+  const opts = { dropAt: 8 };
+  await race(env, clients, opts);
+  const other = clients.find((c) => c !== hostBefore);
+  const tookOver = other.net.isHost && other.sim.bodies.some((b) => !b.human && !b.remote && other.net.roster[b.slot].ai);
+  const end = other.ended;
+  const dropped = end && end.order.find((o) => o.slot === hostBefore.net.slot);
+  const lastIsDropped = end && end.order[end.order.length - 1].slot === hostBefore.net.slot && dropped.dc;
+  const pDrop = await ledger.get(hostBefore.me.pid), pOther = await ledger.get(other.me.pid);
+  const rpOk = pDrop.rp === 630 && pOther.rp !== 650 && pOther.rankedGames === 1;
+  log(`RANKED: locked before 5 wins=${lockOk} | host dropped at 8s → new host took AI=${tookOver} | dropped player last+dc=${lastIsDropped} | RP ${pDrop.rp} (dropped) / ${pOther.rp} (other) ok=${rpOk}`);
+  return lockOk && tookOver && lastIsDropped && rpOk;
+}
+
+(async () => {
+  const t0 = performance.now();
+  let pass = true;
+  try {
+    pass = unitRules() && pass;
+    pass = (await casualMatch()) && pass;
+    pass = (await rankedHostDrop()) && pass;
+  } catch (e) {
+    pass = false;
+    log('EXCEPTION ' + e.stack);
+  }
+  log(`\n${pass ? 'ALL PASS' : 'FAILED'} in ${(performance.now() - t0).toFixed(0)}ms`);
+  document.getElementById('out').textContent = lines.join('\n');
+  window.__done = pass;
+})();
+</script>

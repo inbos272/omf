@@ -29,9 +29,9 @@
     MAX_FALL: 34,
     COYOTE: 0.1,
     BUFFER: 0.13,
-    LAND_SLOP: 0.34,
-    LEDGE_UP: 0.6,   // how far below a top the feet may be and still get lifted onto it
-    LEDGE_VY: -7,    // only while just past the jump's peak, not while dropping fast
+    LAND_SLOP: 0.6,     // matches the character's visible width, so a body that looks on the edge lands
+    LEDGE_UP: 0.85,   // whole slab thickness: feet inside the platform at the peak get lifted onto it
+    LEDGE_VY: -10,    // only while just past the jump's peak, not while dropping fast
     MAX_DY: 3.15,
     REACH_MARGIN: 0.62,
     BOOST_T: 2.4,
@@ -88,7 +88,7 @@
   // Skins. shape: round | cube | tall | blob
   const sk = (id, name, rarity, price, shape, body, belly, acc, accCol, trail, extra) =>
     Object.assign({ id, name, rarity, price, shape, body: hex(body), belly: hex(belly), acc, accCol: hex(accCol), trail: hex(trail) }, extra || {});
-  const P = { c: 150, r: 400, e: 900, l: 2000 };
+  const P = { c: 700, r: 1800, e: 4000, l: 9000 };
   S.SKINS = [
     sk('default', '콩이', 'c', 0, 'round', 0xffc93c, 0xfff0b8, 'none', 0, 0xffe27a),
     sk('mint', '민트콩', 'c', P.c, 'round', 0x4fd8b4, 0xcdf8ea, 'cap', 0xff6b6b, 0x8ff0d4),
@@ -128,13 +128,13 @@
     Object.assign({ id, name, price, a: hex(a), b: hex(b), side: hex(side), p, e: e || 0 }, extra || {});
   S.THEMES = [
     th('classic', '초원', 0, 0x7ed957, 0x69c74a, 0xa06f49, [2.2, 0.35, 0.3, 0.05]),
-    th('cloud', '솜구름', 300, 0xffffff, 0xe3eefb, 0xcad9ee, [1.4, 0.4, 0.05, 0.1]),
-    th('candy', '사탕', 500, 0xff7fb1, 0xfff2f7, 0xff4f92, [3.4, 1, 0, 0.5]),
-    th('wood', '원목', 500, 0xd9a464, 0xba8245, 0x7b5230, [6.5, 0.55, 0.25, 0.08]),
-    th('sand', '사암', 600, 0xe9c185, 0xd5a367, 0xb37a48, [1.2, 0.3, 0.5, 0.03]),
-    th('marble', '대리석', 800, 0xf4f1ec, 0xd5d0cc, 0xb79656, [5, 0.3, 0.1, 0.8]),
-    th('steel', '강철', 900, 0x98a8ba, 0x7f90a4, 0x4a5868, [4, 0.3, 0.14, 0.9]),
-    th('neon', '네온', 1200, 0x24174a, 0x3a2375, 0x120b2c, [3, 0.6, 0, 0.6], 1),
+    th('cloud', '솜구름', 1300, 0xffffff, 0xe3eefb, 0xcad9ee, [1.4, 0.4, 0.05, 0.1]),
+    th('candy', '사탕', 2200, 0xff7fb1, 0xfff2f7, 0xff4f92, [3.4, 1, 0, 0.5]),
+    th('wood', '원목', 2200, 0xd9a464, 0xba8245, 0x7b5230, [6.5, 0.55, 0.25, 0.08]),
+    th('sand', '사암', 2700, 0xe9c185, 0xd5a367, 0xb37a48, [1.2, 0.3, 0.5, 0.03]),
+    th('marble', '대리석', 3600, 0xf4f1ec, 0xd5d0cc, 0xb79656, [5, 0.3, 0.1, 0.8]),
+    th('steel', '강철', 4000, 0x98a8ba, 0x7f90a4, 0x4a5868, [4, 0.3, 0.14, 0.9]),
+    th('neon', '네온', 5400, 0x24174a, 0x3a2375, 0x120b2c, [3, 0.6, 0, 0.6], 1),
     th('crystal', '수정', 0, 0xb68bff, 0x7fd8ff, 0x6a48c4, [2.5, 0.75, 0, 1], 0.5, { milestone: 100 }),
     th('gold', '황금', 0, 0xffd257, 0xffe9a3, 0xc08a22, [3, 0.4, 0.12, 1], 0.25, { milestone: 500 }),
   ];
@@ -215,6 +215,32 @@
 
   // AI race: 90 seconds, faster lava ramp, coins for placement (1st..5th).
   S.RACE = { dur: 90, ai: 4, v0: 1.7, vmax: 3.5, tau: 45, rewards: [150, 90, 60, 40, 25] };
+
+  // AI race difficulty grows with the player's AI-race wins (and online, with the room's average RP).
+  S.aiSkillBand = (level) => {
+    const lo = Math.min(0.75, 0.35 + level * 0.05), hi = Math.min(0.98, 0.6 + level * 0.05);
+    return { lo, hi, aggro: Math.min(0.75, 0.2 + level * 0.05) };
+  };
+  S.aiLevelForRp = (rp) => Math.min(8, Math.floor(rp / 300) + 1);
+
+  // Elevator: pay to start a solo run higher up.
+  S.ELEVATOR = [
+    { floor: 30, price: 1500 }, { floor: 60, price: 3500 }, { floor: 90, price: 6000 },
+    { floor: 120, price: 9000 }, { floor: 150, price: 13000 }, { floor: 180, price: 18000 },
+  ];
+
+  // Online ranks. Placement 1st..5th moves rank points; ranked unlocks after 5 casual wins.
+  S.TIERS = [
+    { id: 'bronze', rp: 0, col: '#c98b5a' }, { id: 'silver', rp: 300, col: '#c7d2df' },
+    { id: 'gold', rp: 700, col: '#ffc93c' }, { id: 'platinum', rp: 1200, col: '#7fe3d6' },
+    { id: 'diamond', rp: 1800, col: '#8fb8ff' }, { id: 'master', rp: 2500, col: '#d38bff' },
+  ];
+  S.tierFor = (rp) => {
+    let t = S.TIERS[0];
+    for (const x of S.TIERS) if (rp >= x.rp) t = x;
+    return t;
+  };
+  S.RANKED_UNLOCK = 5;
 
   S.TYPE_HINTS = {
     1: '얼음 발판 — 미끄러워요',
