@@ -187,6 +187,36 @@ function elevatorAndOnline() {
   return elevOk && elevStill && lavaOk && remoteOk;
 }
 
+// 3e. Revive on the floor the player fell from; prices and the new worlds.
+function reviveAndWorlds() {
+  const trial = (seed) => {
+    const sim = new S.Sim();
+    sim.reset(seed, 0, {});
+    const bot = new S.Bot(0.85, seed);
+    sim.started = true;
+    for (let i = 0; i < 120 * 40 && !sim.dead && sim.floor < 18; i++) sim.step(bot.update(sim, C.DT));
+    const reached = sim.floor;
+    if (!sim.dead) {
+      sim.lavaY = sim.p.y + 2; // drown the player where they stand
+      for (let i = 0; i < 240 && !sim.dead; i++) sim.step({ move: 0, jump: false });
+    }
+    const wasDead = sim.dead;
+    const ok = sim.revive();
+    const floorAfter = sim.floor;
+    const onGolden = sim.p.grounded && sim.p.ground === sim.findGolden(floorAfter);
+    const gap = sim.p.y - sim.lavaY;
+    for (let i = 0; i < 240; i++) sim.step({ move: 0, jump: false }); // idle 2 s on the revive pad
+    return { reached, wasDead, ok, floorAfter, onGolden, gap, alive: !sim.dead, y: sim.p.y };
+  };
+  const runs = [11, 23, 37, 41, 59].map(trial);
+  const good = runs.filter((r) => r.wasDead && r.ok && r.onGolden && r.alive && r.floorAfter >= r.reached - 1 && r.gap > 10).length;
+  const price = [S.revivePrice(10, 0), S.revivePrice(40, 0), S.revivePrice(40, 1), S.revivePrice(200, 2)];
+  const worlds = [S.envFor(399), S.envFor(400), S.envFor(499), S.envFor(500), S.envFor(900)];
+  log(`REVIVE: ${good}/${runs.length} revived on their floor and survived 2s (floors ${runs.map((r) => r.reached + '→' + r.floorAfter).join(', ')}) | prices ${price.join('/')} | worlds 399/400/499/500/900F → ${worlds.join('/')} (${S.ENVS.map((e) => e.id).join(',')})`);
+  return good === runs.length && price[0] === 450 && price[1] === 1200 && price[2] === 2400 && price[3] === 20800
+    && worlds.join() === '4,5,5,6,6' && S.ENVS[5].id === 'hell' && S.ENVS[6].id === 'heaven';
+}
+
 // 4. Abilities change the physics the way their descriptions promise.
 function perks() {
   const top = (ab, presses) => {
@@ -266,6 +296,7 @@ setTimeout(() => {
     pass = ledge() && pass;
     pass = feltFalls() && pass;
     pass = elevatorAndOnline() && pass;
+    pass = reviveAndWorlds() && pass;
     pass = perks() && pass;
     pass = races() && pass;
   } catch (e) { pass = false; log('EXCEPTION ' + e.stack); }

@@ -12,7 +12,7 @@
   S.applyI18n();
 
   const G = (S.game = {
-    state: 'menu', // menu | play | countdown | raceIntro | paused | dying | over | coll
+    state: 'menu', // menu | play | countdown | raceIntro | paused | dying | revive | waiting | over | coll | elevator | matching
     mode: 'solo',  // solo | race
     dragYaw: 0,
     preview: { skin: null, theme: null },
@@ -74,7 +74,10 @@
     S.Save.save();
     ui.applyLanguage();
   };
-  G.languageChosen = () => ui.show('menu');
+  G.languageChosen = () => {
+    ui.show('menu');
+    if (S.dailyInfo(S.Save.data).can) ui.openDaily();
+  };
 
   // ---------- adaptive quality ----------
   const adapt = { acc: 0, frames: 0, cool: 3, scale: 1 };
@@ -184,6 +187,8 @@
     sim.reset(seed, S.Save.data.best, loadout());
     scene.resetRun(seed);
     S.Save.data.runs++;
+    G.revives = 0;
+    G.adRevived = false;
     beginHud('solo');
     G.state = 'play';
     updateHud();
@@ -227,10 +232,18 @@
   G.again = () => (online() ? G.startOnline(G.mode) : G.startRace());
 
   // ---------- elevator ----------
-  G.elevator = (f) => {
+  // via: 'coins' (default) | 'ticket' (daily-gift pass, floor 30) | 'free' (after a rewarded ad)
+  const canElevate = () => G.mode === 'solo' && G.state === 'play' && !sim.started && sim.startFloor === 0;
+  G.elevator = (f, via) => {
     const e = S.ELEVATOR.find((x) => x.floor === f), d = S.Save.data;
-    if (!e || d.coins < e.price || G.mode !== 'solo' || sim.started) return;
-    d.coins -= e.price;
+    if (!e || !canElevate()) return;
+    if (via === 'ticket') {
+      if (f !== 30 || d.tickets.elev30 < 1) return;
+      d.tickets.elev30--;
+    } else if (via !== 'free') {
+      if (d.coins < e.price) return;
+      d.coins -= e.price;
+    }
     S.Save.save();
     const fromY = sim.p.y;
     sim.reset(sim.seed, d.best, Object.assign(loadout(), { startFloor: f })); // same tower, higher start
@@ -242,6 +255,16 @@
     scene.elevatorStart(fromY, sim.p.y, sim.p.x);
     audio.play('elevHum');
     G.vibrate(30);
+  };
+
+  G.elevatorAd = async () => {
+    if (!canElevate()) return;
+    input.enabled = false;
+    input.reset();
+    const ok = await S.Ads.rewarded('elevator_30');
+    input.enabled = G.state === 'play';
+    if (!ok) { ui.toast(t('ad.fail'), 1800); return; }
+    G.elevator(30, 'free');
   };
 
   function elevatorDone() {
@@ -268,9 +291,8 @@
     serverState = net.configured ? 'checking' : 'none';
     ui.versus({ server: serverState });
     if (!net.configured) return;
-    const ok = await net.health();
-    serverState = ok ? 'ok' : 'offline';
-    if (ok) {
+    serverState = await net.health();
+    if (serverState === 'ok') {
       const p = await net.profile(S.Save.data.pid);
       if (p) Object.assign(S.Save.data, { casualWins: p.casualWins, rp: p.rp, tier: p.tier }), S.Save.save();
     }
@@ -370,7 +392,7 @@
     for (const b of sim.bodies) bySlot[b.slot] = b;
     // Without the server's verdict (connection lost) the local standings can't be trusted —
     // rivals froze at their last snapshot — so nothing is ranked or rewarded beyond coins picked up.
-    const unranked = !m;
+    const unranked = !m || !!m.void;
     const order = m
       ? m.order.map((o) => Object.assign(bySlot[o.slot] || {}, { floor: o.floor, dc: o.dc }))
       : raceOrder();
@@ -386,12 +408,13 @@
       Object.assign(d, { casualWins: prof.casualWins, rp: prof.rp, tier: prof.tier });
     }
     S.Save.save();
+    countGame();
     G.state = 'over';
     sim.started = false;
     input.enabled = false;
     input.reset();
     net.close();
-    ui.raceOver({ reason: 'time', order, rank, rankReward, picked, earned, rp, unranked, note: unranked ? t('net.lost') : '' });
+    ui.raceOver({ reason: 'time', order, rank, rankReward, picked, earned, rp, unranked, note: !m ? t('net.lost') : m.void ? t('net.void') : '' });
     if (!unranked && rank <= 3) {
       audio.play('reward');
       scene.celebrate(rank === 1 ? [1, 0.82, 0.3] : [0.6, 0.85, 1]);
@@ -418,6 +441,123 @@
     input.enabled = true;
     input.reset();
     audio.duck(false);
+  };
+
+  // ---------- revive (solo) ----------
+  // After a fall the player may come back on the floor they reached: pay coins (pricier the higher
+  // the floor and with every revive this run), spend a revive pass, or watch one ad per run.
+  const REVIVE_T = 8, REVIVE_MIN_FLOOR = 5;
+  function reviveOffer() {
+    const d = S.Save.data, floor = sim.floor;
+    if (G.mode !== 'solo' || floor < REVIVE_MIN_FLOOR) return null;
+    const price = S.revivePrice(floor, G.revives);
+    const o = { floor, price, coinsOk: d.coins >= price, tickets: d.tickets.revive, adOk: !G.adRevived };
+    return o.coinsOk || o.tickets || o.adOk ? o : null;
+  }
+
+  function endSoloRun() {
+    ui.overlay('revive', false);
+    G.state = 'over';
+    finishRun(true);
+  }
+
+  G.reviveWith = async (how) => {
+    if (G.state !== 'revive' || G.reviveBusy) return;
+    const d = S.Save.data, o = reviveOffer();
+    if (!how || !o) return endSoloRun();
+    if (how === 'coins') {
+      if (!o.coinsOk) return;
+      d.coins -= o.price;
+    } else if (how === 'ticket') {
+      if (!o.tickets) return;
+      d.tickets.revive--;
+    } else if (how === 'ad') {
+      if (!o.adOk) return;
+      G.reviveBusy = true;
+      const ok = await S.Ads.rewarded('revive');
+      G.reviveBusy = false;
+      if (G.state !== 'revive') return;
+      if (!ok) { ui.toast(t('ad.fail'), 1800); G.revT = Math.max(G.revT, 4); return; }
+      G.adRevived = true;
+    }
+    S.Save.save();
+    ui.overlay('revive', false);
+    if (!sim.revive()) return endSoloRun();
+    G.revives++;
+    G.state = 'countdown';
+    G.countT = 1.5;
+    input.enabled = true;
+    input.reset();
+    audio.duck(false);
+    audio.play('reward');
+    ui.banner(S.fl(sim.floor), t('rev.done'), '');
+    G.vibrate(50);
+    updateHud();
+  };
+
+  // ---------- rewarded / between-games ads ----------
+  G.tripleCoins = async (btn) => {
+    const earned = +btn.dataset.earned || 0;
+    if (earned <= 0 || btn.disabled) return;
+    btn.disabled = true;
+    const ok = await S.Ads.rewarded('triple_coins');
+    if (!ok) { btn.disabled = false; ui.toast(t('ad.fail'), 1800); return; }
+    const d = S.Save.data;
+    d.coins += earned * 2;
+    S.Save.save();
+    btn.dataset.earned = 0;
+    btn.classList.add('hidden');
+    document.getElementById(btn.id === 'btnTriple' ? 'oEarned' : 'rrEarned').textContent = (earned * 3).toLocaleString();
+    ui.toast(t('ad.tripled', { n: (earned * 2).toLocaleString() }), 2000);
+    audio.play('reward');
+    scene.celebrate([1, 0.82, 0.3]);
+  };
+
+  // Every 7–10 finished games an interstitial plays when the player leaves the result screen.
+  const countGame = () => { S.Save.data.gamesSinceAd++; S.Save.save(); };
+  G.afterGame = async (next) => {
+    if (G.adPending) return;
+    const d = S.Save.data;
+    if (d.gamesSinceAd >= d.adEvery) {
+      G.adPending = true;
+      d.gamesSinceAd = 0;
+      d.adEvery = S.AD_EVERY[0] + Math.floor(Math.random() * (S.AD_EVERY[1] - S.AD_EVERY[0] + 1));
+      S.Save.save();
+      await S.Ads.interstitial('between_games');
+      G.adPending = false;
+    }
+    next();
+  };
+
+  // ---------- daily gift ----------
+  G.claimDaily = () => {
+    const d = S.Save.data, info = S.dailyInfo(d);
+    if (!info.can) return;
+    const r = S.DAILY[info.day];
+    d.daily = { last: S.today(), streak: info.streak };
+    if (r.coins) d.coins += r.coins;
+    if (r.elev30) d.tickets.elev30 += r.elev30;
+    if (r.revive) d.tickets.revive += r.revive;
+    S.Save.save();
+    audio.play('reward');
+    scene.celebrate([1, 0.8, 0.3]);
+    G.vibrate(40);
+    ui.openDaily();
+    ui.refreshMenu();
+  };
+
+  // ---------- rankings ----------
+  const submitBest = () => {
+    const d = S.Save.data;
+    if (net.configured && d.best > 0) return net.submitScore(d.pid, d.nick, d.best);
+    return Promise.resolve(false);
+  };
+  G.loadRanking = async (type) => {
+    if (!net.configured) return { error: t('vs.noServer') };
+    await submitBest();
+    const res = await net.top(type, S.Save.data.pid);
+    if (res === 'outdated') return { error: t('vs.outdated') };
+    return res || { error: t('vs.offline') };
   };
 
   function claimMilestones(floor) {
@@ -450,7 +590,11 @@
     const newBest = floor > prevBest;
     if (newBest) d.best = floor;
     S.Save.save();
-    if (showResult) ui.gameOver({ floor, prevBest, newBest, picked, bonus, earned, rewards: G.rewards });
+    if (newBest) submitBest();
+    if (showResult) {
+      countGame();
+      ui.gameOver({ floor, prevBest, newBest, picked, bonus, earned, rewards: G.rewards });
+    }
   }
 
   const raceOrder = () => sim.bodies.slice().sort((a, b) => b.floor - a.floor || a.floorT - b.floorT || a.id - b.id);
@@ -472,6 +616,7 @@
     d.racePlays++;
     if (rank === 1) d.raceWins++;
     S.Save.save();
+    countGame();
     G.state = 'over';
     input.enabled = false;
     input.reset();
@@ -652,16 +797,28 @@
           G.state = 'waiting';
           ui.toast(t('net.waiting'), 4000);
         } else {
-          G.state = 'over';
-          finishRun(true);
+          const o = reviveOffer();
+          if (o) {
+            G.state = 'revive';
+            G.revT = REVIVE_T;
+            ui.revive(o);
+          } else {
+            G.state = 'over';
+            finishRun(true);
+          }
         }
       }
+    }
+    if (G.state === 'revive' && !S.Ads.busy) {
+      G.revT -= dt;
+      ui.reviveTimer(G.revT / REVIVE_T);
+      if (G.revT <= 0) G.reviveWith(null);
     }
 
     if (G.mode === 'solo') ui.elevatorButton(G.state === 'play' && !sim.started && sim.startFloor === 0);
 
     const paused = G.state === 'paused' || G.state === 'countdown';
-    const inPlay = G.state === 'play' || G.state === 'dying' || G.state === 'waiting' || paused || G.state === 'over' || G.state === 'raceIntro';
+    const inPlay = G.state === 'play' || G.state === 'dying' || G.state === 'waiting' || G.state === 'revive' || paused || G.state === 'over' || G.state === 'raceIntro';
     scene.render(paused ? 0 : dt, paused ? 1 : acc / C.DT, {
       camMode: G.state === 'coll' ? (G.preview.theme ? 'theme' : 'custom') : G.state === 'menu' ? 'menu' : G.state === 'elevator' ? 'elevator' : 'play',
       skin: G.preview.skin,
@@ -721,7 +878,13 @@
     if (cap.App && cap.App.addListener) {
       cap.App.addListener('backButton', () => {
         const open = (id) => !document.getElementById(id).classList.contains('hidden');
+        if (S.Ads.busy) return; // an ad is showing: it closes itself
         if (open('confirm')) ui.overlay('confirm', false);
+        else if (open('revive')) G.reviveWith(null);
+        else if (open('daily')) ui.overlay('daily', false);
+        else if (open('ranking')) ui.overlay('ranking', false);
+        else if (open('elevator')) ui.overlay('elevator', false);
+        else if (open('versus')) ui.overlay('versus', false);
         else if (open('settings')) ui.closeSettings();
         else if (G.state === 'play') G.pause();
         else if (G.state === 'paused') G.resumeWithCountdown();
@@ -742,9 +905,14 @@
   sim.reset(seed0, 0, loadout());
   scene.resetRun(seed0);
   ui.applyLanguage();
+  S.Ads.init();
+  G.revives = 0;
   if (!save.lang) ui.showLanguagePick();
   else if (params.get('mode') === 'race') G.startRace(); // home-screen shortcut
-  else ui.show('menu');
+  else {
+    ui.show('menu');
+    if (S.dailyInfo(save).can && !params.has('bot')) ui.openDaily(); // greet with today's gift
+  }
 
   if (params.has('bot')) {
     G.bot = new S.Bot(parseFloat(params.get('bot')) || 0.8, 3);

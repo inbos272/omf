@@ -1,4 +1,4 @@
-// ONE MORE FLOOR: SKY TOWER — tuning constants and content tables.
+// Sky Tower — tuning constants and content tables.
 (function () {
   'use strict';
   const S = (window.SKY = window.SKY || {});
@@ -77,6 +77,18 @@
       top: hex(0x03030d), mid: hex(0x0d0a2a), hor: hex(0x2b1d63), sun: hex(0xdfe6ff), fog: hex(0x120f36),
       hemiS: hex(0x8f9cdf), hemiG: hex(0x3a2b6f), light: [0.95, 0.96, 1.12], colA: hex(0x3a3f70), colB: hex(0x24274f),
       stars: 1, fogR: [70, 280], amb: 'dust',
+    },
+    {
+      id: 'hell', name: '지옥', en: 'INFERNO', from: 400,
+      top: hex(0x120004), mid: hex(0x4a0808), hor: hex(0xff3b1a), sun: hex(0xff6a2a), fog: hex(0x3a0606),
+      hemiS: hex(0xa03020), hemiG: hex(0xff4010), light: [1.1, 0.55, 0.42], colA: hex(0x3a1414), colB: hex(0x1e0a0a),
+      stars: 0.05, fogR: [35, 170], amb: 'ash',
+    },
+    {
+      id: 'heaven', name: '천국', en: 'HEAVEN', from: 500,
+      top: hex(0x8fc8ff), mid: hex(0xfff2d8), hor: hex(0xffffff), sun: hex(0xfffbe0), fog: hex(0xfff4e2),
+      hemiS: hex(0xfffaf0), hemiG: hex(0xf3d9a8), light: [1.12, 1.05, 0.9], colA: hex(0xfff6e6), colB: hex(0xf0dcb0),
+      stars: 0, fogR: [60, 260], amb: 'feather',
     },
   ];
   S.envFor = (floor) => {
@@ -241,6 +253,18 @@
     return t;
   };
   S.RANKED_UNLOCK = 5;
+
+  // Revive where you fell: higher floors cost more, and each further revive in a run doubles it.
+  S.revivePrice = (floor, used) => Math.round(((200 + floor * 25) * Math.pow(2, used)) / 50) * 50;
+
+  // Daily login rewards, one per day; missing a day restarts at day 1.
+  S.DAILY = [
+    { coins: 300 }, { elev30: 1 }, { coins: 600 }, { revive: 1 },
+    { coins: 1000 }, { elev30: 2 }, { coins: 2500, revive: 1 },
+  ];
+
+  // Interstitial ads after this many finished games (random each cycle).
+  S.AD_EVERY = [7, 10];
 
   S.TYPE_HINTS = {
     1: '얼음 발판 — 미끄러워요',

@@ -163,6 +163,33 @@
         const [x, z] = ring(i, 16, 50, 115), s = r(1.2, 4.2);
         put(M.GEM, x, r(-26, 30), z, s, s * 0.8, s, r(0, 6), hx(0x3a2a2e), 0.03);
       }
+    } else if (envId === 'hell') {
+      // Jagged black spires with molten tips, falls of lava, embered rocks.
+      for (let i = 0; i < 16; i++) {
+        const [x, z] = ring(i, 16, 70, 160), w = r(8, 20), h = r(50, 120), base = -80, yaw = r(0, 6);
+        put(M.CONE, x, base, z, w, h, w, yaw, hx(0x1a0606), 0.02);
+        put(M.CONE, x, base + h * 0.82, z, w * 0.18, h * 0.18, w * 0.18, yaw, hx(0xff3a12), 1.4);
+        if (i % 3 === 0) put(M.CYL, x + w * 0.5, base + h * 0.4, z, 1.6, h * 0.8, 1.6, 0, hx(0xff6a1a), 1.6);
+      }
+      for (let i = 0; i < 18; i++) {
+        const [x, z] = ring(i, 18, 48, 115), s = r(1.4, 4.2);
+        put(M.GEM, x, r(-26, 30), z, s, s * 0.75, s, r(0, 6), hx(0x2a0c0c), 0.05);
+        put(M.SPHERE, x, r(-26, 30), z, s * 0.25, s * 0.25, s * 0.25, 0, hx(0xff5a20), 1.5);
+      }
+    } else if (envId === 'heaven') {
+      // Marble pillars with gold caps, floating halos, a sea of clouds below.
+      for (let i = 0; i < 12; i++) {
+        const [x, z] = ring(i, 12, 70, 150), s = r(3, 6), h = r(40, 90), y = r(-50, -20), yaw = r(0, 6);
+        put(M.CYL, x, y, z, s, h, s, yaw, hx(0xfffaf0), 0.25, 0.4);
+        put(M.CYL, x, y + h * 0.5 + 1, z, s * 1.35, 2, s * 1.35, yaw, hx(0xffd257), 0.5, 1);
+        put(M.CYL, x, y - h * 0.5, z, s * 1.35, 2, s * 1.35, yaw, hx(0xffd257), 0.5, 1);
+      }
+      for (let i = 0; i < 9; i++) {
+        const [x, z] = ring(i, 9, 55, 120), s = r(4, 9);
+        put(M.TORUS, x, r(-10, 35), z, s, s * 0.5, s, r(0, 3), hx(0xffe48a), 1.3, 1);
+      }
+      clouds(18, [1, 1, 1], -46, -18, 0.55);
+      clouds(8, [1, 0.98, 0.94], 5, 35, 0.5);
     } else {
       const pcs = [0xd87a4a, 0x6ac0d8, 0xb18cf0, 0xe5c07b, 0x62d68f, 0xf28cb1];
       for (let i = 0; i < 6; i++) {
@@ -337,6 +364,15 @@
           this.burst(p.x, p.y + 0.4, 18 * q, 8, 0.45, 0.4, 0.06, TYPE_COL[4], 0.95, 0, true);
           if (human) this.cam.kick = 1;
           break;
+        case 'revive':
+          an.deadT = 0;
+          an.sv += 18;
+          this.burst(p.x, p.y + 0.8, 46, 12, 0.9, 0.6, 0.08, [1, 0.9, 0.5], 1, 3, true);
+          if (human) {
+            this.flash = Math.max(this.flash, 0.5);
+            this.flashC = [1, 0.95, 0.7];
+          }
+          break;
         case 'shield':
           an.sv += 14;
           this.burst(p.x, p.y + 0.6, 40 * q, 13, 0.8, 0.6, 0.1, [0.5, 0.9, 1], 1, 4, true);
@@ -369,10 +405,11 @@
           for (let i = 0; i < 6; i++) this.burst(a.x + (Math.random() - 0.5) * a.hw * 2, a.y - 0.4, 4, 3.6, 0.8, 0.5, 0.15, TYPE_COL[3], 0.95, 20, false);
           break;
         case 'boom': {
-          this.burst(a.x, a.y - 0.1, 42, 15, 0.7, 1.3, 0.2, [1, 0.62, 0.15], 1, 5, true);
-          this.burst(a.x, a.y - 0.1, 16, 7, 1, 1.8, 3.2, [0.25, 0.2, 0.22], 0.6, -2, false);
-          this.cam.shake = Math.max(this.cam.shake, b ? 0.85 : 0.35);
-          this.flash = Math.max(this.flash, b ? 0.42 : 0.14);
+          this.burst(a.x, a.y - 0.1, 64, 22, 0.8, 1.7, 0.2, [1, 0.62, 0.15], 1, 5, true);
+          this.burst(a.x, a.y + 0.3, 24, 12, 0.5, 2.6, 0.4, [1, 0.95, 0.6], 1, 0, true);
+          this.burst(a.x, a.y - 0.1, 22, 9, 1.2, 2.2, 4, [0.25, 0.2, 0.22], 0.6, -2, false);
+          this.cam.shake = Math.max(this.cam.shake, b ? 1.1 : 0.45);
+          this.flash = Math.max(this.flash, b ? 0.55 : 0.18);
           this.flashC = [1, 0.75, 0.4];
           break;
         }
@@ -954,7 +991,7 @@
       if (dt <= 0) return;
       const fx = this.fx, cam = this.cam, sim = this.sim;
       const env = S.ENVS[this.env].amb;
-      const rate = { wisp: 2.5, sand: 26, snow: 30, ember: 24, dust: 14 }[env] * this.quality;
+      const rate = { wisp: 2.5, sand: 26, snow: 30, ember: 24, dust: 14, ash: 34, feather: 12 }[env] * this.quality;
       this.ambT += dt * rate;
       while (this.ambT > 1) {
         this.ambT -= 1;
@@ -964,7 +1001,14 @@
         else if (env === 'sand') fx.emit(x, y, z, 9 + Math.random() * 6, Math.random() * 1.5, 2, 1.5, 0.13, 0.13, 1, 0.84, 0.56, 0.6, 0, false);
         else if (env === 'snow') fx.emit(x, y, z, 1.6, -3.2 - Math.random() * 2, 0.8, 2.4, 0.2, 0.2, 1, 1, 1, 0.9, 0, false);
         else if (env === 'ember') fx.emit(x, y - 6, z, 0.5, 3 + Math.random() * 3.5, 0.5, 2.2, 0.2, 0.04, 1, 0.55, 0.15, 1, 0, true);
-        else fx.emit(x, y, z, 0, 0.2, 0, 2.8, 0.13, 0.13, 0.75, 0.82, 1, 0.8, 0, true);
+        else if (env === 'ash') {
+          // grey ash drifting down with the odd ember rising through it
+          if (Math.random() < 0.7) fx.emit(x, y, z, 0.8, -1.6 - Math.random(), 0.4, 2.6, 0.16, 0.12, 0.35, 0.3, 0.3, 0.75, 0, false);
+          else fx.emit(x, y - 8, z, 0.4, 4 + Math.random() * 3, 0.4, 2, 0.22, 0.04, 1, 0.35, 0.08, 1, 0, true);
+        } else if (env === 'feather') {
+          // soft light motes and feathers floating down
+          fx.emit(x, y, z, Math.sin(this.time + x) * 0.8, -0.9, 0.3, 3.6, 0.22, 0.18, 1, 0.97, 0.85, 0.9, 0, true);
+        } else fx.emit(x, y, z, 0, 0.2, 0, 2.8, 0.13, 0.13, 0.75, 0.82, 1, 0.8, 0, true);
       }
       // Sparks off the lava surface, only when it is close enough to see.
       if (sim.lavaY > cam.y - 34 && !(this.elev && cam.y < sim.lavaY + 6)) {

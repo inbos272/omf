@@ -1,6 +1,9 @@
 // Pure game rules shared by the Durable Objects and the browser tests (no Cloudflare APIs here).
 
+// Bump when the client/server messages change; the game refuses a server on another version.
+export const PROTOCOL = 2;
 export const ROOM_SIZE = 5;
+export const AI_WAIT_MS = 3000;       // after the last human finishes, wait this long for AI results
 export const FILL_AFTER_MS = 10000;   // wait this long for humans, then fill with AI
 export const JOIN_MS = 4000;          // time for matched players to connect to the room
 export const COUNTDOWN_MS = 3600;     // same 3-2-1-GO as the AI race
@@ -8,6 +11,8 @@ export const RACE_MS = 90000;
 export const GRACE_MS = 8000;         // late results still accepted
 export const RANKED_UNLOCK = 5;       // casual wins needed for ranked
 export const PLACE_RP = [40, 20, 5, -10, -20];
+export const TOP_N = 100;             // leaderboard length
+export const MAX_FLOOR = 100000;      // best-floor submissions above this are rejected
 
 export const TIERS = [
   { id: 'bronze', rp: 0 }, { id: 'silver', rp: 300 }, { id: 'gold', rp: 700 },

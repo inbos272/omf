@@ -9,6 +9,8 @@
     nick: '', pid: '', casualWins: 0, rp: 0, tier: 'bronze', // online numbers are a cache of the server's
     skins: ['default'], themes: ['classic'], skin: 'default', theme: 'classic',
     claimed: [], seen: {},
+    daily: { last: '', streak: 0 }, tickets: { elev30: 0, revive: 0 },
+    gamesSinceAd: 0, adEvery: 0,
     settings: {
       vol: { master: 0.9, bgm: 0.55, jump: 0.8, land: 0.7, coin: 0.75, collapse: 0.8, warn: 0.8, over: 0.8, fx: 0.8 },
       quality: 'auto', haptics: true, swap: false, oneHand: false, shake: true,
@@ -39,6 +41,17 @@
   // Same rules as the server: 1–12 visible characters, no control characters or angle brackets.
   S.cleanNick = (s) => String(s || '').replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, 12);
 
+  // Daily gift calendar (local dates). Missing a day restarts the 7-day cycle from day 1.
+  const ymd = (dt) => dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+  S.today = (now) => ymd(now || new Date());
+  S.dailyInfo = (d, now) => {
+    const n = now || new Date();
+    const today = ymd(n), yest = ymd(new Date(n.getFullYear(), n.getMonth(), n.getDate() - 1));
+    if (d.daily.last === today) return { can: false, day: (d.daily.streak - 1) % S.DAILY.length, streak: d.daily.streak };
+    const streak = d.daily.last === yest ? d.daily.streak + 1 : 1;
+    return { can: true, day: (streak - 1) % S.DAILY.length, streak };
+  };
+
   S.Save = {
     data: defaults(),
     load() {
@@ -48,7 +61,10 @@
         Object.assign(d, o);
         d.settings = Object.assign(defaults().settings, o.settings || {});
         d.settings.vol = Object.assign(defaults().settings.vol, (o.settings && o.settings.vol) || {});
+        d.daily = Object.assign(defaults().daily, o.daily || {});
+        d.tickets = Object.assign(defaults().tickets, o.tickets || {});
       }
+      if (!d.adEvery) d.adEvery = S.AD_EVERY[0] + Math.floor(Math.random() * (S.AD_EVERY[1] - S.AD_EVERY[0] + 1));
       if (!d.skins.includes('default')) d.skins.push('default');
       if (!d.themes.includes('classic')) d.themes.push('classic');
       if (!S.SKINS.some((s) => s.id === d.skin && d.skins.includes(s.id))) d.skin = 'default';
@@ -69,7 +85,8 @@
       const old = this.data;
       this.data = defaults();
       // Progress reset, not the language, name or online identity (rank lives on the server).
-      for (const k of ['settings', 'lang', 'nick', 'pid', 'casualWins', 'rp', 'tier']) this.data[k] = old[k];
+      // The daily calendar stays too, so a reset can't be used to claim today's gift twice.
+      for (const k of ['settings', 'lang', 'nick', 'pid', 'casualWins', 'rp', 'tier', 'daily', 'adEvery']) this.data[k] = old[k];
       this.save();
     },
   };

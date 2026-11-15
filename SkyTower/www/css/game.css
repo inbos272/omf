@@ -79,7 +79,13 @@ svg { fill: currentColor; display: block; }
 #bestTag { position: absolute; left: 0; top: 0; padding: 3px 10px; border-radius: 9px; font-size: 12px; font-weight: 900; background: #ff5d8f; box-shadow: 0 2px 0 #b52c5d; pointer-events: none; opacity: 0; will-change: transform; white-space: nowrap; }
 #lavaSlow { position: absolute; top: calc(var(--safe-t) + 132px); left: 50%; transform: translateX(-50%); padding: 4px 13px; border-radius: 99px; font-size: 13px; font-weight: 900; color: #06334d; background: #9fe7ff; opacity: 0; transition: opacity .2s; pointer-events: none; }
 #lavaSlow.on { opacity: 1; }
-#lavaGlow { position: absolute; inset: 0; opacity: 0; pointer-events: none; box-shadow: inset 0 -44px 70px -14px rgba(255, 70, 10, .9), inset 0 0 40px 2px rgba(255, 60, 10, .5); }
+/* Lava warning edge. Gradients on their own compositor layer: changing opacity near the lava
+   only re-blends the layer, instead of re-rasterising a full-screen blurred box-shadow every step
+   (which made phones stutter right when the lava got close). */
+#lavaGlow { position: absolute; inset: 0; opacity: 0; pointer-events: none; will-change: opacity; transform: translateZ(0);
+  background:
+    linear-gradient(to top, rgba(255, 70, 10, .85), rgba(255, 70, 10, .35) 9%, rgba(255, 70, 10, 0) 24%),
+    linear-gradient(to right, rgba(255, 60, 10, .45), rgba(255, 60, 10, 0) 7%, rgba(255, 60, 10, 0) 93%, rgba(255, 60, 10, .45)); }
 #banner { position: absolute; left: 0; right: 0; top: 28%; text-align: center; pointer-events: none; opacity: 0; display: flex; flex-direction: column; align-items: center; padding: 0 20px; }
 #banner.show { animation: banner 2.5s cubic-bezier(.2, .9, .3, 1) both; }
 @keyframes banner { 0% { opacity: 0; transform: scale(1.5) translateY(14px); } 11% { opacity: 1; transform: scale(1); } 80% { opacity: 1; } 100% { opacity: 0; transform: translateY(-20px); } }
@@ -348,4 +354,60 @@ input[type=range]::-moz-range-thumb { width: 26px; height: 26px; border: 0; bord
 .nick-row input { flex: 1; min-width: 0; min-height: 48px; padding: 0 14px; border: 0; border-radius: 12px; font: inherit; font-size: 17px; font-weight: 800; color: #fff; background: rgba(255, 255, 255, .1); box-shadow: inset 0 0 0 2px var(--line); -webkit-user-select: text; user-select: text; touch-action: manipulation; }
 .nick-row input:focus { outline: none; box-shadow: inset 0 0 0 2px var(--sun); }
 .nick-row .btn { width: auto; min-height: 48px; padding: 0 18px; }
-.rp-row dd { font-weight: 900; }.spectate { position: absolute; left: 50%; top: calc(var(--safe-t) + 124px); transform: translateX(-50%); padding: 6px 16px; border-radius: 99px; font-size: 15px; font-weight: 900; white-space: nowrap; color: #fff; background: rgba(18, 26, 66, .8); box-shadow: inset 0 0 0 2px rgba(255, 201, 60, .7); pointer-events: none; }
+.rp-row dd { font-weight: 900; }
+.spectate { position: absolute; left: 50%; top: calc(var(--safe-t) + 124px); transform: translateX(-50%); padding: 6px 16px; border-radius: 99px; font-size: 15px; font-weight: 900; white-space: nowrap; color: #fff; background: rgba(18, 26, 66, .8); box-shadow: inset 0 0 0 2px rgba(255, 201, 60, .7); pointer-events: none; }
+
+/* menu corner: daily reward + ranking */
+.menu-top { position: absolute; top: calc(var(--safe-t) + 12px); right: calc(var(--safe-r) + 14px); display: flex; gap: 8px; z-index: 2; }
+.emoji-btn { position: relative; font-size: 25px; line-height: 1; }
+.badge { position: absolute; top: -4px; right: -4px; width: 16px; height: 16px; border-radius: 50%; background: #ff4d6d; box-shadow: 0 0 0 3px var(--panel); animation: pulse 1s ease-in-out infinite alternate; }
+@keyframes pulse { to { transform: scale(1.25); } }
+#btnDaily:not(:has(.hidden)) { animation: bob 1.2s ease-in-out infinite alternate; }
+
+/* rewarded-ad buttons */
+.btn-ad { color: #fff; background: linear-gradient(#36c68a, #1f9a68); box-shadow: 0 4px 0 #136346; }
+.btn-ad:active { box-shadow: 0 1px 0 #136346; }
+.btn-ad:disabled { opacity: .45; }
+
+/* revive offer */
+.revive-panel { align-items: center; text-align: center; }
+.revive-panel .btn { width: 100%; }
+.revive-ring { position: relative; width: 96px; height: 96px; }
+.revive-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.revive-ring circle { fill: none; stroke-width: 8; stroke: rgba(255, 255, 255, .12); }
+#revRing { stroke: var(--sun); stroke-linecap: round; stroke-dasharray: 276.5; transition: stroke-dashoffset .1s linear; }
+.revive-ring span { position: absolute; inset: 0; display: grid; place-items: center; font-size: 26px; font-weight: 900; color: var(--sun); }
+.revive-coins { min-height: 58px; font-size: 24px; }
+
+/* daily reward */
+.daily-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
+.day { position: relative; min-height: 78px; padding: 6px 3px; border-radius: 14px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; text-align: center; background: var(--panel-2); box-shadow: 0 3px 0 #111a42; }
+.day small { font-size: 11px; font-weight: 800; color: #b8c4ee; }
+.day b { font-size: 22px; line-height: 1; }
+.day span { font-size: 11px; font-weight: 800; line-height: 1.15; }
+.day.done { opacity: .45; }
+.day.done::after { content: '✓'; position: absolute; top: 3px; right: 7px; font-weight: 900; color: #6ee7a8; }
+.day.today { box-shadow: 0 0 0 3px var(--sun), 0 3px 0 #111a42; animation: bob 1s ease-in-out infinite alternate; }
+.day.big { grid-column: span 2; background: linear-gradient(#5a3fb0, #3b2a86); }
+
+/* ranking */
+.rank-panel { max-height: 100%; }
+.rank-list { list-style: none; margin: 0; padding: 0; max-height: 46vh; max-height: 46dvh; overflow-y: auto; touch-action: pan-y; display: flex; flex-direction: column; gap: 5px; }
+.rank-list li, .rank-me { display: grid; grid-template-columns: 38px 1fr auto; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px; border-radius: 12px; font-weight: 800; background: var(--panel-2); }
+.rank-list li .r { font-weight: 900; color: #c7d3ff; text-align: center; }
+.rank-list li:nth-child(1) .r { color: #ffd23f; } .rank-list li:nth-child(2) .r { color: #dfe7ff; } .rank-list li:nth-child(3) .r { color: #f0a46a; }
+.rank-list li .n, .rank-me .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank-list li.me { box-shadow: inset 0 0 0 2px var(--sun); }
+.rank-list li b, .rank-me b { font-weight: 900; color: var(--sun); }
+.rank-me { background: linear-gradient(#4a3a12, #3a2d0c); box-shadow: inset 0 0 0 2px var(--sun); }
+.rank-me:empty { display: none; }
+
+/* stand-in ad screen */
+.ad-screen { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 20px; background: rgba(4, 6, 20, .92); pointer-events: auto; }
+.ad-box { position: relative; width: min(100%, 340px); padding: 26px 20px 20px; border-radius: 24px; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; background: linear-gradient(160deg, #233a9a, #18224f 60%); box-shadow: 0 0 0 3px rgba(255, 255, 255, .12), 0 22px 44px rgba(0, 0, 0, .6); }
+.ad-label { position: absolute; top: 10px; left: 12px; padding: 1px 7px; border-radius: 6px; font-size: 11px; font-weight: 900; color: #3b2300; background: var(--sun); }
+.ad-art img { width: 110px; height: 110px; border-radius: 26px; box-shadow: 0 10px 24px rgba(0, 0, 0, .45); animation: bob 1.2s ease-in-out infinite alternate; }
+.ad-box b { font-size: 22px; font-weight: 900; }
+.ad-box p { font-size: 14px; line-height: 1.45; color: #c7d3ff; }
+.ad-timer { min-height: 20px; font-size: 14px; font-weight: 800; color: var(--sun); }
+.ad-box .btn:disabled { filter: grayscale(.8); opacity: .6; }

@@ -1,8 +1,8 @@
 {
   "id": "./",
-  "name": "ONE MORE FLOOR: SKY TOWER",
+  "name": "Sky Tower",
   "short_name": "Sky Tower",
-  "description": "Climb an endless sky tower, outrun the rising lava, unlock 30 characters with unique abilities, and race AI rivals. Works fully offline.",
+  "description": "Climb an endless sky tower through seven worlds up to Heaven, outrun the rising lava, unlock 30 characters with unique abilities, and race AI or online rivals.",
   "lang": "ko",
   "dir": "ltr",
   "start_url": "./index.html",
@@ -34,7 +34,7 @@
   "screenshots": [
     { "src": "screenshots/climb.jpg", "sizes": "1080x1920", "type": "image/jpeg", "form_factor": "narrow", "label": "Climb the endless sky tower" },
     { "src": "screenshots/race.jpg", "sizes": "1080x1920", "type": "image/jpeg", "form_factor": "narrow", "label": "Race four AI rivals" },
-    { "src": "screenshots/worlds.jpg", "sizes": "1080x1920", "type": "image/jpeg", "form_factor": "narrow", "label": "Five worlds from sky islands to outer space" },
+    { "src": "screenshots/worlds.jpg", "sizes": "1080x1920", "type": "image/jpeg", "form_factor": "narrow", "label": "Seven worlds from sky islands to Heaven" },
     { "src": "screenshots/wide.jpg", "sizes": "1920x1080", "type": "image/jpeg", "form_factor": "wide", "label": "Outrun the rising lava" }
   ]
 }

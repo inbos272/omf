@@ -361,6 +361,28 @@
       return null;
     }
 
+    // Revive (solo): back on the golden platform of the floor reached, lava pushed well below.
+    revive() {
+      const p = this.p;
+      let q = null;
+      for (let f = p.floor; f >= 0 && !q; f--) q = this.findGolden(f);
+      if (!q) return false;
+      q.state = 0;
+      q.spawn = 1;
+      q.t = 0;
+      this._place(p, q.x, q);
+      p.dead = false;
+      p.vx = p.vy = 0;
+      p.lock = 0;
+      p.forced = false;
+      p.boost = 0;
+      this.lavaY = q.y + C.LAVA_START;
+      this.slowT = Math.max(this.slowT, 3);
+      this.warned = false;
+      this.emit('revive', q, 0, p);
+      return true;
+    }
+
     _supports(q, x, slop) {
       return q.state !== 2 && Math.abs(wrapD(x - q.x)) <= q.hw + C.LAND_SLOP + slop;
     }
@@ -443,16 +465,18 @@
       for (const p of this.bodies) {
         if (p.dead || p.remote) continue;
         const dx = wrapD(p.x - q.x);
-        if (Math.abs(dx) >= q.hw + 1.4 || Math.abs(p.y - q.y) >= 2.6) continue;
+        // Bigger blast: wider reach and a much harder throw.
+        if (Math.abs(dx) >= q.hw + 2.4 || Math.abs(p.y - q.y) >= 3.4) continue;
         p.grounded = false;
         p.ground = null;
         if (p.perk.boomProof) {
-          p.vy = Math.max(p.vy, 6);
+          p.vy = Math.max(p.vy, 7);
           continue;
         }
-        p.vx = (dx >= 0 ? 1 : -1) * 15;
-        p.vy = 9;
-        p.lock = 0.24;
+        p.vx = (dx >= 0 ? 1 : -1) * 24;
+        p.vy = 15;
+        p.lock = 0.38;
+        p.shove = 0.5;
         p.forced = true;
         if (p.human) humanHit = true;
       }

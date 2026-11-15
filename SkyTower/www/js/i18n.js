@@ -157,6 +157,7 @@
   a('vs.locked', '일반대전 {n}/5승 시 해금', 'Unlocks at 5 casual wins ({n}/5)', 'カジュアル5勝で解放（{n}/5）', '普通对战5胜解锁（{n}/5）', 'Se desbloquea con 5 victorias casuales ({n}/5)');
   a('vs.noServer', '온라인 서버가 설정되지 않았어요', 'No online server is set up', 'オンラインサーバーが未設定です', '尚未设置在线服务器', 'No hay servidor en línea configurado');
   a('vs.offline', '서버에 연결할 수 없어요', 'Can\'t reach the server', 'サーバーに接続できません', '无法连接服务器', 'No se puede conectar al servidor');
+  a('vs.outdated', '서버 업데이트가 필요해요 (게임과 서버 버전이 달라요)', 'The server needs an update (game and server versions differ)', 'サーバーの更新が必要です（バージョン不一致）', '服务器需要更新（游戏与服务器版本不一致）', 'El servidor necesita actualizarse (versiones distintas)');
   a('vs.checking', '서버 확인 중…', 'Checking the server…', 'サーバー確認中…', '正在检查服务器…', 'Comprobando el servidor…');
   a('mt.searching', '상대를 찾는 중…', 'Finding rivals…', '対戦相手を検索中…', '正在寻找对手…', 'Buscando rivales…');
   a('mt.count', '{n}/5명', '{n}/5 players', '{n}/5人', '{n}/5人', '{n}/5 jugadores');
@@ -166,6 +167,7 @@
   a('mt.locked', '랭크전은 일반대전 5승 후 열려요', 'Ranked opens after 5 casual wins', 'ランク戦はカジュアル5勝で解放', '普通对战5胜后开放排位赛', 'La clasificatoria se abre tras 5 victorias casuales');
   a('net.lost', '연결이 끊겼어요. 이 경기는 기록되지 않아요', 'Connection lost. This match won\'t count', '接続が切れました。この試合は記録されません', '连接已断开，本场不计入记录', 'Conexión perdida. Esta partida no cuenta');
   a('net.left', '{name} 님이 나갔어요', '{name} left the race', '{name}さんが退出しました', '{name} 离开了比赛', '{name} abandonó la carrera');
+  a('net.void', 'AI 결과를 확인하지 못해 무효 경기로 처리됐어요', 'Void match: the AI results never arrived', 'AIの結果が届かず無効試合になりました', '未收到AI结果，本场无效', 'Partida anulada: no llegaron los resultados de la IA');
   a('net.unranked', '기록되지 않음', 'Not recorded', '記録されません', '不计入记录', 'Sin registrar');
   a('spec.watching', '👀 관전 중: {name}', '👀 Watching {name}', '👀 観戦中: {name}', '👀 观战中: {name}', '👀 Viendo a {name}');
   a('net.waiting', '다른 선수들의 결과를 기다리는 중…', 'Waiting for the others to finish…', '他の選手の結果を待っています…', '等待其他选手完成…', 'Esperando a los demás…');
@@ -185,6 +187,50 @@
   a('elev.title', '엘리베이터', 'Elevator', 'エレベーター', '电梯', 'Ascensor');
   a('elev.sub', '코인을 내고 높은 층에서 시작해요. 층수 보너스는 도착한 층부터 쌓여요.', 'Pay coins to start higher up. Floor bonus counts from where you arrive.', 'コインを払って高い階から開始。階数ボーナスは到着階から加算。', '花费金币从更高楼层开始。楼层奖励从到达楼层起计算。', 'Paga para empezar más arriba. El bono de pisos cuenta desde la llegada.');
   a('elev.arrive', '{f}층 도착!', 'Arrived at floor {f}!', '{f}階に到着！', '到达{f}层！', '¡Llegaste al piso {f}!');
+  a('elev.ticket', '이용권으로 30층 ({n}장)', 'Floor 30 with a pass ({n})', 'チケットで30階（{n}枚）', '用电梯券去30层（{n}张）', 'Piso 30 con pase ({n})');
+  a('elev.ad', '광고 보고 30층', 'Watch an ad: floor 30', '広告を見て30階へ', '看广告去30层', 'Mira un anuncio: piso 30');
+  a('menu.tag', '용암보다 빠르게!', 'Outclimb the lava!', '溶岩より速く！', '比熔岩更快！', '¡Más rápido que la lava!');
+  a('env.hell', '지옥', 'Inferno', '地獄', '地狱', 'Infierno');
+  a('env.heaven', '천국', 'Heaven', '天国', '天堂', 'Cielo');
+
+  // ---- revive ----
+  a('rev.title', '부활할까요?', 'Revive?', '復活しますか？', '要复活吗？', '¿Revivir?');
+  a('rev.sub', '{f}층에서 바로 이어서 올라가요', 'Continue right from floor {f}', '{f}階からそのまま続行', '从{f}层继续攀登', 'Sigue desde el piso {f}');
+  a('rev.ticket', '부활권 사용 ({n}장)', 'Use a revive pass ({n})', '復活チケットを使う（{n}枚）', '使用复活券（{n}张）', 'Usar pase de revivir ({n})');
+  a('rev.ad', '광고 보고 부활', 'Watch an ad to revive', '広告を見て復活', '看广告复活', 'Mira un anuncio y revive');
+  a('rev.giveUp', '그만하기', 'No thanks', 'やめる', '放弃', 'No, gracias');
+  a('rev.done', '부활!', 'Revived!', '復活！', '复活！', '¡Reviviste!');
+
+  // ---- daily reward ----
+  a('daily.title', '일일 보상', 'Daily gift', 'デイリー報酬', '每日奖励', 'Regalo diario');
+  a('daily.sub', '매일 접속하면 보상이 커져요. 하루라도 빠지면 1일차부터 다시 시작해요.', 'Come back every day for bigger gifts. Miss a day and it starts over.', '毎日ログインで報酬アップ。1日でも休むと1日目から。', '每天登录奖励更丰厚。中断一天就从第1天重新开始。', 'Vuelve cada día para premios mayores. Si fallas un día, se reinicia.');
+  a('daily.day', '{n}일차', 'Day {n}', '{n}日目', '第{n}天', 'Día {n}');
+  a('daily.claim', '받기', 'Claim', '受け取る', '领取', 'Reclamar');
+  a('daily.claimed', '내일 또 만나요!', 'See you tomorrow!', 'また明日！', '明天见！', '¡Hasta mañana!');
+  a('daily.coins', '코인 {n}', '{n} coins', 'コイン{n}', '金币{n}', '{n} monedas');
+  a('daily.elev', '30층 이용권 ×{n}', 'Floor-30 pass ×{n}', '30階チケット×{n}', '30层电梯券×{n}', 'Pase piso 30 ×{n}');
+  a('daily.revive', '부활권 ×{n}', 'Revive pass ×{n}', '復活チケット×{n}', '复活券×{n}', 'Pase revivir ×{n}');
+  a('daily.got', '{items} 받았어요!', 'Got {items}!', '{items}をゲット！', '获得{items}！', '¡Conseguiste {items}!');
+  a('daily.have', '🛗 30층 이용권 {e}장 · 🎟️ 부활권 {r}장', '🛗 Floor-30 passes {e} · 🎟️ Revive passes {r}', '🛗 30階チケット{e}枚・🎟️ 復活チケット{r}枚', '🛗 30层电梯券{e}张 · 🎟️ 复活券{r}张', '🛗 Pases piso 30: {e} · 🎟️ Pases revivir: {r}');
+
+  // ---- ranking ----
+  a('rank.title', '랭킹', 'Rankings', 'ランキング', '排行榜', 'Clasificación');
+  a('rank.floor', '최고 층', 'Best floor', '最高階', '最高层', 'Mejor piso');
+  a('rank.rp', '최고 랭크', 'Top rank', '最高ランク', '最高段位', 'Mejor rango');
+  a('rank.me', '내 순위', 'You', '自分', '我的排名', 'Tú');
+  a('rank.unranked', '순위 없음', 'Unranked', '圏外', '未上榜', 'Sin puesto');
+  a('rank.empty', '아직 기록이 없어요', 'No records yet', 'まだ記録がありません', '暂无记录', 'Aún no hay récords');
+  a('rank.loading', '불러오는 중…', 'Loading…', '読み込み中…', '加载中…', 'Cargando…');
+
+  // ---- ads ----
+  a('ad.triple', '광고 보고 코인 3배', 'Watch an ad: 3× coins', '広告を見てコイン3倍', '看广告金币×3', 'Mira un anuncio: monedas ×3');
+  a('ad.tripled', '코인 3배! +{n}', '3× coins! +{n}', 'コイン3倍！+{n}', '金币×3！+{n}', '¡Monedas ×3! +{n}');
+  a('ad.title', '광고', 'Advertisement', '広告', '广告', 'Anuncio');
+  a('ad.placeholder', '광고가 연결되면 이 자리에 광고가 나와요.', 'A real ad will play here once ads are connected.', '広告を接続すると、ここに広告が表示されます。', '接入广告后，这里会播放广告。', 'Aquí se mostrará un anuncio cuando estén conectados.');
+  a('ad.wait', '{s}초 후 닫을 수 있어요', 'Close in {s}s', 'あと{s}秒で閉じられます', '{s}秒后可关闭', 'Cerrar en {s} s');
+  a('ad.claim', '보상 받기', 'Get reward', '報酬を受け取る', '领取奖励', 'Recibir premio');
+  a('ad.close', '닫기', 'Close', '閉じる', '关闭', 'Cerrar');
+  a('ad.fail', '지금은 광고를 볼 수 없어요', 'No ad available right now', '今は広告を表示できません', '暂时没有可用广告', 'No hay anuncios ahora');
 
   // ---- abilities: name, description ----
   const ab = (id, names, descs) => { a('ab.' + id, ...names); a('abd.' + id, ...descs); };

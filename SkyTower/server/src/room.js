@@ -1,7 +1,7 @@
 // Room: one Durable Object per match. It hands out the shared seed and start time, relays
 // player snapshots and events between clients, collects results, and settles rank points.
 // Physics runs on the clients; the lowest connected human slot also simulates the AI rivals.
-import { aiSkillForRp, orderResults, chooseHost, JOIN_MS, COUNTDOWN_MS, RACE_MS, GRACE_MS } from './rules.js';
+import { aiSkillForRp, orderResults, chooseHost, JOIN_MS, COUNTDOWN_MS, RACE_MS, GRACE_MS, AI_WAIT_MS } from './rules.js';
 
 const send = (ws, msg) => { try { ws.send(JSON.stringify(msg)); } catch (e) { /* socket already gone */ } };
 const toFloor = (v) => (Number.isFinite(+v) ? Math.max(0, Math.floor(+v)) : 0);
@@ -103,12 +103,20 @@ export class Room {
         this.broadcast({ ...msg, from: a.slot }, ws);
         break;
       case 'ai':
-        if (a.slot === m.host) this.broadcast({ ...msg, from: a.slot }, ws);
+        if (a.slot !== m.host) break;
+        this.broadcast({ ...msg, from: a.slot }, ws);
+        // Remember each AI's latest progress: if the host vanishes before reporting, the AI is
+        // ranked by what it had actually climbed instead of counting as 0 floors.
+        m.lastAi = m.lastAi || {};
+        for (const s of msg.list || []) {
+          const e = m.roster[s.slot];
+          if (e && e.ai) m.lastAi[s.slot] = { floor: toFloor(s.f), floorT: toTime(s.ft) };
+        }
         break;
       case 'res': // a player's own final result (sent when they fall or when time runs out)
         if (!m.results[a.slot]) m.results[a.slot] = { floor: toFloor(msg.floor), floorT: toTime(msg.floorT) };
         await this.save();
-        if (this.complete()) await this.finish();
+        await this.settle();
         break;
       case 'aires': // AI results, only from the host, sent as each AI falls
         if (a.slot !== m.host || !Array.isArray(msg.list)) break;
@@ -117,13 +125,21 @@ export class Room {
           if (e && e.ai && !m.results[r.slot]) m.results[r.slot] = { floor: toFloor(r.floor), floorT: toTime(r.floorT) };
         }
         await this.save();
-        if (this.complete()) await this.finish();
+        await this.settle();
         break;
     }
   }
 
   complete() {
     return this.m.roster.every((r) => this.m.results[r.slot]);
+  }
+
+  // End as soon as nothing can change: every slot reported, or nobody connected. Once every human
+  // is done only the AI is left; give the host a moment to report them, then end regardless.
+  async settle() {
+    const m = this.m;
+    if (this.complete() || this.connected().size === 0) return this.finish();
+    if (m.roster.every((r) => r.ai || m.results[r.slot])) await this.ctx.storage.setAlarm(this.now() + AI_WAIT_MS);
   }
 
   async webSocketClose(ws) {
@@ -139,7 +155,7 @@ export class Room {
     }
     await this.save();
     await this.updateHost();
-    if (this.complete() || this.connected().size === 0) await this.finish();
+    await this.settle();
   }
 
   async alarm() {
@@ -150,15 +166,20 @@ export class Room {
     const m = await this.meta();
     if (!m || m.ended) return;
     m.ended = true;
-    const entries = m.roster.map((r) => ({ slot: r.slot, ...(m.results[r.slot] || (r.ai ? { floor: 0 } : { dc: true, floor: 0 })) }));
+    const last = m.lastAi || {};
+    const entries = m.roster.map((r) => ({ slot: r.slot, ...(m.results[r.slot] || (r.ai ? last[r.slot] || { floor: 0 } : { dc: true, floor: 0 })) }));
     const order = orderResults(entries);
+    // AI the host never reported (host gone, app killed): their final height is unknown, so no
+    // standing can be trusted. The match is void — no wins, no rank points — rather than letting a
+    // player who fell (and then refreshed) win against rivals frozen mid-climb.
+    m.void = m.roster.some((r) => r.ai && !m.results[r.slot]);
     const humans = [];
     order.forEach((e, i) => {
       const r = m.roster[e.slot];
       if (!r.ai) humans.push({ pid: r.pid, name: r.name, place: i + 1, slot: r.slot });
     });
     let profiles = {};
-    if (humans.length) {
+    if (humans.length && !m.void) {
       const stub = this.env.LEDGER.get(this.env.LEDGER.idFromName('global'));
       const res = await stub.fetch('https://ledger/apply', { method: 'POST', body: JSON.stringify({ mode: m.mode, players: humans }) });
       const byPid = await res.json();
@@ -170,7 +191,7 @@ export class Room {
       const p = profiles[s];
       pub[s] = { delta: p.delta, rp: p.rp, tier: p.tier, casualWins: p.casualWins };
     }
-    this.broadcast({ t: 'end', order: order.map((e) => ({ slot: e.slot, floor: e.floor || 0, dc: !!e.dc })), profiles: pub });
+    this.broadcast({ t: 'end', void: m.void, order: order.map((e) => ({ slot: e.slot, floor: e.floor || 0, dc: !!e.dc })), profiles: pub });
     for (const ws of this.ctx.getWebSockets()) try { ws.close(1000, 'race over'); } catch (e) { /* already closed */ }
   }
 }

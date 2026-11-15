@@ -1,8 +1,8 @@
 {
-  "name": "one-more-floor-sky-tower",
-  "version": "1.0.0",
+  "name": "sky-tower",
+  "version": "1.1.0",
   "private": true,
-  "description": "ONE MORE FLOOR: SKY TOWER - offline 3D arcade climber",
+  "description": "Sky Tower - 3D arcade tower climber",
   "scripts": {
     "add:android": "cap add android",
     "add:ios": "cap add ios",

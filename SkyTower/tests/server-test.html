@@ -13,6 +13,7 @@ import * as rules from '../server/src/rules.js';
 import { Matchmaker } from '../server/src/matchmaker.js';
 import { Room } from '../server/src/room.js';
 import { Ledger } from '../server/src/ledger.js';
+import worker from '../server/src/index.js';
 
 const S = window.SKY, C = S.CFG, lines = [];
 const log = (s) => lines.push(s);
@@ -138,10 +139,11 @@ async function race(env, clients, opts) {
         c.net.sendResult(c.sim.p);
       }
       // Same host duty as main.js: report fallen AI, fast-forward them once all humans are out.
-      c.net.settleAi(c.sim, S.RACE.dur - elapsed, (ais, left) => {
+      if (!c.noSettle) c.net.settleAi(c.sim, S.RACE.dur - elapsed, (ais, left) => {
         for (let t = left; t > 0 && ais.some((b) => !b.dead); t -= dt) c.sim.step({ move: 0, jump: false });
       });
     }
+    if (opts.stopAt && elapsed >= opts.stopAt) break;
     if (opts.stopWhenEnded && clients.every((c) => c.ended || c.dropped)) {
       opts.endedAt = (clock - startAt) / 1000;
       break;
@@ -206,8 +208,9 @@ async function casualMatch() {
   const humansClimbed = clients.every((c) => order.find((o) => o.slot === c.net.slot).floor >= 5);
   log(`CASUAL: queued=${queued} joined=${joined} roster=${roster.length} (AI ${roster.filter((r) => r.ai).length}) hosts=${hosts} | ghost sync max gap ${maxGap.toFixed(2)} | end msgs ${ends}/3, same order=${sameOrder}, winner ${winner ? winner.name : 'AI'} casualWins ok=${ledgerOk}`);
   log(`  order: ${order.map((o) => `${o.slot}:${o.floor}${o.dc ? 'dc' : ''}`).join(' ')} | trigger events relayed ${clients.reduce((s, c) => s + c.events, 0)}`);
-  // 120 ms interpolation delay at up to ~27 u/s (bounce pads) bounds how far a ghost can trail.
-  return queued && joined && roster.length === 5 && hosts === 1 && maxGap < 4 && ends === 3 && sameOrder && ledgerOk && humansClimbed;
+  // 120 ms interpolation delay plus one 15 Hz send interval at up to ~27 u/s (bounce pads)
+  // bounds how far a ghost can trail: about 5 units.
+  return queued && joined && roster.length === 5 && hosts === 1 && maxGap < 5.5 && ends === 3 && sameOrder && ledgerOk && humansClimbed;
 }
 
 async function rankedHostDrop() {
@@ -276,11 +279,88 @@ async function earlyEndAndRejoin() {
   return !!early && aiFloors.length === 3 && leftSeen && rejoinError === 'room';
 }
 
+// The reported bug: alone with 4 AI, fall, the AI results never arrive (old client / app killed),
+// then refresh. The room must not crown the human: AI are ranked by their last relayed progress,
+// and the room ends ~3 s after the last human result instead of waiting for the clock.
+async function refreshAfterFall() {
+  const env = makeEnv();
+  const c = makeClient(env, 'Kim', 'mint', 0.4);
+  c.noSettle = true;
+  let roomId = null;
+  const origJoin = c.net._joinRoom.bind(c.net);
+  c.net._joinRoom = (room, tok) => { roomId = room; origJoin(room, tok); };
+  c.net.find('casual', c.me, c.handlers);
+  await flush();
+  clock += 10500;
+  await env.MATCH.get(env.MATCH.idFromName('casual')).o.alarm();
+  for (let i = 0; i < 10; i++) await flush();
+  const opts = { killAt: 20, stopAt: 21 };
+  await race(env, [c], opts);
+  const room = env.ROOM.get(env.ROOM.idFromString(roomId)).o;
+  const quickAlarm = room.ctx.storage.alarm - clock;
+  c.net.close(); // the refresh
+  for (let i = 0; i < 6; i++) await flush();
+  const me = await env.LEDGER.get(env.LEDGER.idFromName('global')).o.get(c.me.pid);
+  const last = room.m.lastAi || {};
+  const aiBest = Math.max(0, ...Object.values(last).map((x) => x.floor));
+  const myFloor = room.m.results[c.net.slot].floor;
+  const crowned = me.casualWins > 0;
+  log(`REFRESH AFTER FALL: room end scheduled ≤${(quickAlarm / 1000).toFixed(1)}s after | ended=${room.m.ended} void=${room.m.void} | me ${myFloor}F vs AI last seen ${aiBest}F | crowned=${crowned}`);
+  return room.m.ended && room.m.void && quickAlarm <= 3100 && Object.keys(last).length === 4 && !crowned;
+}
+
+// Leaderboards through the real Worker routes (index.js → Ledger) and the real client (net.js).
+async function leaderboard() {
+  const env = makeEnv();
+  const net = new S.Net({ baseUrl: 'https://fake', fetchFn: (u, o) => worker.fetch(new Request(u, o), env) });
+  const pid = (n) => 'pid-' + n + '-0000';
+  const sent = [
+    await net.submitScore(pid('ann'), 'Ann', 120),
+    await net.submitScore(pid('bob'), 'Bob', 300),
+    await net.submitScore(pid('cid'), 'Cid', 120), // ties go to whoever got there first
+    await net.submitScore(pid('ann'), 'Ann', 80),  // lower: ignored
+  ];
+  const rejected = [
+    await net.submitScore('x', 'Bad', 50),
+    await net.submitScore(pid('eve'), 'Eve', 1e9),
+    await net.submitScore(pid('eve'), 'Eve', -3),
+  ];
+  const t1 = await net.top('floor', pid('ann'));
+  const order1 = t1.top.map((e) => e.name + ':' + e.v).join(',');
+  const noIds = t1.top.every((e) => !('pid' in e)) && t1.top.filter((e) => e.me).length === 1;
+  await net.submitScore(pid('ann'), 'Anna', 10); // rename only
+  const t2 = await net.top('floor', pid('ann'));
+  const ledger = env.LEDGER.get(env.LEDGER.idFromName('global')).o;
+  await ledger.apply({ mode: 'ranked', players: [{ pid: pid('ann'), name: 'Anna', place: 1 }, { pid: pid('bob'), name: 'Bob', place: 5 }] });
+  await ledger.apply({ mode: 'ranked', players: [{ pid: pid('ann'), name: 'Anna', place: 5 }] }); // peak stays 40
+  const rp = await net.top('rp', pid('ann'));
+  const outsider = await net.top('floor', pid('zed'));
+  for (let i = 0; i < 120; i++) await net.submitScore(pid('p' + i), 'P' + i, 500 + i);
+  const full = await net.top('floor', pid('ann'));
+  const old = await new S.Net({ baseUrl: 'https://x', fetchFn: async () => new Response('Sky Tower online server') }).top('floor', pid('ann'));
+  log(`LEADERBOARD: sent ${sent.join('/')} rejected ${rejected.join('/')} | floor top ${order1} (me #${t1.me.rank} ${t1.me.v}F, ids hidden=${noIds}) | renamed ${t2.top[1].name} | rp top ${rp.top.map((e) => e.name + ':' + e.v).join(',')} me ${rp.me.v} | outsider rank ${outsider.me.rank} | after 120 more: ${full.top.length} rows, me ${full.me.rank} ${full.me.v}F | old server → ${old}`);
+  return sent.every(Boolean) && rejected.every((x) => !x) && order1 === 'Bob:300,Ann:120,Cid:120' && t1.me.rank === 2 && t1.me.v === 120 && noIds
+    && t2.top[1].name === 'Anna' && t2.top[1].v === 120 && rp.top.length === 1 && rp.top[0].name === 'Anna' && rp.top[0].v === 40 && rp.me.v === 40
+    && outsider.me.rank === null && full.top.length === rules.TOP_N && full.me.rank === null && full.me.v === 120 && old === 'outdated';
+}
+
+async function versionCheck() {
+  const mk = (body) => new S.Net({ baseUrl: 'https://x', fetchFn: async () => new Response(body) });
+  const ok = await mk(JSON.stringify({ ok: true, v: S.NET_PROTOCOL })).health();
+  const old = await mk(JSON.stringify({ ok: true, v: 1 })).health();
+  const off = await new S.Net({ baseUrl: 'https://x', fetchFn: async () => { throw new Error('down'); } }).health();
+  log(`VERSION: current=${ok} old-server=${old} unreachable=${off} (client protocol ${S.NET_PROTOCOL}, server ${rules.PROTOCOL})`);
+  return ok === 'ok' && old === 'outdated' && off === 'offline' && S.NET_PROTOCOL === rules.PROTOCOL;
+}
+
 (async () => {
   const t0 = performance.now();
   let pass = true;
   try {
     pass = unitRules() && pass;
+    pass = (await versionCheck()) && pass;
+    pass = (await leaderboard()) && pass;
+    pass = (await refreshAfterFall()) && pass;
     pass = (await casualMatch()) && pass;
     pass = (await rankedHostDrop()) && pass;
     pass = (await earlyEndAndRejoin()) && pass;

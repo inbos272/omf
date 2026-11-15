@@ -4,6 +4,8 @@
   'use strict';
   const S = window.SKY;
   const SEND_HZ = 15, DELAY_MS = 120;
+  const PROTOCOL = 2; // must match server/src/rules.js
+  S.NET_PROTOCOL = PROTOCOL;
 
   class Net {
     constructor(opts) {
@@ -34,16 +36,19 @@
     base() { return this.baseUrl.replace(/\/+$/, ''); }
     wsUrl(path, params) { return this.base().replace(/^http/, 'ws') + path + '?' + new URLSearchParams(params).toString(); }
 
+    // 'ok' | 'outdated' (server runs another protocol version: redeploy needed) | 'offline'
     async health() {
-      if (!this.configured) return false;
+      if (!this.configured) return 'offline';
       try {
         const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
         const timer = setTimeout(() => ctl && ctl.abort(), 2500);
         const r = await this.fetchFn(this.base() + '/health', ctl ? { signal: ctl.signal } : {});
         clearTimeout(timer);
-        return !!(r && r.ok);
+        if (!r || !r.ok) return 'offline';
+        const j = await r.json().catch(() => ({}));
+        return j.v === PROTOCOL ? 'ok' : 'outdated';
       } catch (e) {
-        return false;
+        return 'offline';
       }
     }
 
@@ -52,6 +57,46 @@
       try {
         const r = await this.fetchFn(this.base() + '/profile?pid=' + encodeURIComponent(pid));
         return r.ok ? await r.json() : null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    // ---- leaderboard ----
+    async _timed(url, opts, ms) {
+      const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timer = setTimeout(() => ctl && ctl.abort(), ms || 4000);
+      try {
+        return await this.fetchFn(url, Object.assign({}, opts, ctl ? { signal: ctl.signal } : {}));
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    async submitScore(pid, name, best) {
+      if (!this.configured) return false;
+      try {
+        const r = await this._timed(this.base() + '/score', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pid, name, best }),
+        });
+        return !!(r && r.ok);
+      } catch (e) {
+        return false;
+      }
+    }
+
+    // type: 'floor' | 'rp' → { top: [{ name, v, me }], me: { v, rank|null } } | 'outdated' | null
+    async top(type, pid) {
+      if (!this.configured) return null;
+      try {
+        const r = await this._timed(this.base() + '/top?type=' + encodeURIComponent(type) + '&pid=' + encodeURIComponent(pid));
+        if (!r) return null;
+        if (r.status === 404) return 'outdated';
+        if (!r.ok) return null;
+        const j = await r.json().catch(() => null);
+        return j && Array.isArray(j.top) ? j : 'outdated'; // a server without rankings answers with plain text
       } catch (e) {
         return null;
       }

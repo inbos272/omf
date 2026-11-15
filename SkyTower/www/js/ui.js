@@ -58,6 +58,18 @@
         $('sNick').value = n;
         this.toast(t('set.nickSaved'), 1400);
       };
+      $('btnDaily').onclick = () => this.openDaily();
+      $('btnDailyClose').onclick = () => this.overlay('daily', false);
+      $('btnDailyClaim').onclick = () => G.claimDaily();
+      $('btnRank').onclick = () => this.openRanking('floor');
+      $('btnRankClose').onclick = () => this.overlay('ranking', false);
+      for (const b of $('rankTabs').children) b.onclick = () => this.openRanking(b.dataset.type);
+      $('btnTriple').onclick = () => G.tripleCoins($('btnTriple'));
+      $('btnRaceTriple').onclick = () => G.tripleCoins($('btnRaceTriple'));
+      $('btnRevCoins').onclick = () => G.reviveWith('coins');
+      $('btnRevTicket').onclick = () => G.reviveWith('ticket');
+      $('btnRevAd').onclick = () => G.reviveWith('ad');
+      $('btnRevNo').onclick = () => G.reviveWith(null);
       $('btnCustom').onclick = () => this.openColl('custom');
       $('btnShop').onclick = () => this.openColl('shop');
       $('btnSettings').onclick = () => this.openSettings();
@@ -66,10 +78,11 @@
       $('btnRestart').onclick = () => G.restart();
       $('btnPauseSettings').onclick = () => this.openSettings();
       $('btnQuit').onclick = () => G.toMenu(true);
-      $('btnAgain').onclick = () => G.startRun();
-      $('btnOverMenu').onclick = () => G.toMenu(false);
-      $('btnRaceAgain').onclick = () => G.again();
-      $('btnRaceMenu').onclick = () => G.toMenu(false);
+      // Leaving a result screen is where the occasional between-games ad may play.
+      $('btnAgain').onclick = () => G.afterGame(() => G.startRun());
+      $('btnOverMenu').onclick = () => G.afterGame(() => G.toMenu(false));
+      $('btnRaceAgain').onclick = () => G.afterGame(() => G.again());
+      $('btnRaceMenu').onclick = () => G.afterGame(() => G.toMenu(false));
       $('btnCollBack').onclick = () => G.toMenu(false);
       $('btnCollAction').onclick = () => this.collAction();
       $('btnSetClose').onclick = () => this.closeSettings();
@@ -202,6 +215,91 @@
       $('mBest').textContent = S.fl(d.best);
       $('mCoins').textContent = d.coins.toLocaleString();
       $('mVersusSub').textContent = t('menu.versusSub');
+      $('dailyBadge').classList.toggle('hidden', !S.dailyInfo(d).can);
+    }
+
+    // ---- daily gift ----
+    rewardParts(r) {
+      const parts = [];
+      if (r.coins) parts.push({ icon: '💰', text: t('daily.coins', { n: r.coins.toLocaleString() }) });
+      if (r.elev30) parts.push({ icon: '🛗', text: t('daily.elev', { n: r.elev30 }) });
+      if (r.revive) parts.push({ icon: '🎟️', text: t('daily.revive', { n: r.revive }) });
+      return parts;
+    }
+
+    openDaily() {
+      const d = S.Save.data, info = S.dailyInfo(d), grid = $('dailyGrid');
+      grid.textContent = '';
+      S.DAILY.forEach((r, i) => {
+        const cell = document.createElement('div');
+        const done = i < info.day || (!info.can && i === info.day);
+        cell.className = 'day' + (done ? ' done' : '') + (info.can && i === info.day ? ' today' : '') + (i === S.DAILY.length - 1 ? ' big' : '');
+        const parts = this.rewardParts(r);
+        const day = document.createElement('small');
+        day.textContent = t('daily.day', { n: i + 1 });
+        const icon = document.createElement('b');
+        icon.textContent = parts.map((p) => p.icon).join('');
+        const label = document.createElement('span');
+        label.textContent = parts.map((p) => p.text).join(' + ');
+        cell.append(day, icon, label);
+        grid.appendChild(cell);
+      });
+      const btn = $('btnDailyClaim');
+      btn.disabled = !info.can;
+      btn.textContent = info.can ? t('daily.claim') : t('daily.claimed');
+      $('dailyTickets').textContent = t('daily.have', { e: d.tickets.elev30, r: d.tickets.revive });
+      this.overlay('daily', true);
+    }
+
+    // ---- rankings ----
+    async openRanking(type) {
+      this.rankType = type;
+      for (const b of $('rankTabs').children) b.classList.toggle('on', b.dataset.type === type);
+      $('rankList').textContent = '';
+      $('rankMe').textContent = '';
+      $('rankStatus').textContent = t('rank.loading');
+      this.overlay('ranking', true);
+      const res = await this.G.loadRanking(type);
+      if (this.rankType !== type || $('ranking').classList.contains('hidden')) return;
+      if (res.error) { $('rankStatus').textContent = res.error; return; }
+      const d = S.Save.data, list = $('rankList');
+      const score = (e) => (type === 'floor' ? S.fl(e.v) : t('tier.' + S.tierFor(e.v).id) + ' · ' + e.v);
+      const row = (el, rank, e) => {
+        const r = document.createElement('span');
+        r.className = 'r';
+        r.textContent = rank || '-';
+        const n = document.createElement('span');
+        n.className = 'n';
+        n.textContent = e.name;
+        const b = document.createElement('b');
+        b.textContent = score(e);
+        if (type === 'rp') b.style.color = S.tierFor(e.v).col;
+        el.append(r, n, b);
+      };
+      res.top.forEach((e, i) => {
+        const li = document.createElement('li');
+        if (e.me) li.className = 'me';
+        row(li, i + 1, e);
+        list.appendChild(li);
+      });
+      $('rankStatus').textContent = res.top.length ? '' : t('rank.empty');
+      if (res.me && res.me.v > 0) row($('rankMe'), res.me.rank || t('rank.unranked'), { name: d.nick, v: res.me.v });
+    }
+
+    // ---- revive offer ----
+    revive(o) {
+      $('revFloor').textContent = o.floor;
+      $('revSub').textContent = t('rev.sub', { f: o.floor });
+      $('revPrice').textContent = o.price.toLocaleString();
+      $('btnRevCoins').disabled = !o.coinsOk;
+      $('btnRevTicket').classList.toggle('hidden', !o.tickets);
+      $('revTicket').textContent = t('rev.ticket', { n: o.tickets });
+      $('btnRevAd').classList.toggle('hidden', !o.adOk);
+      this.reviveTimer(1);
+      this.overlay('revive', true);
+    }
+    reviveTimer(k) {
+      $('revRing').style.strokeDashoffset = (276.5 * (1 - Math.max(0, k))).toFixed(1);
     }
 
     nameOf(b) {
@@ -224,7 +322,8 @@
       $('vsRankIcon').style.color = tier.col;
       $('vsRankedSub').textContent = unlocked ? t('vs.rankedSub', { tier: t('tier.' + tier.id), rp: d.rp }) : t('vs.locked', { n: d.casualWins });
       $('vsRankedSub').style.color = unlocked ? tier.col : '';
-      $('vsStatus').textContent = st.server === 'none' ? t('vs.noServer') : st.server === 'offline' ? t('vs.offline') : st.server === 'checking' ? t('vs.checking') : '';
+      $('vsStatus').textContent = st.server === 'none' ? t('vs.noServer') : st.server === 'offline' ? t('vs.offline')
+        : st.server === 'outdated' ? t('vs.outdated') : st.server === 'checking' ? t('vs.checking') : '';
       this.overlay('versus', true);
     }
 
@@ -247,6 +346,17 @@
     openElevator() {
       const d = S.Save.data, list = $('elevList');
       list.textContent = '';
+      const special = (cls, icon, text, fn) => {
+        const b = document.createElement('button');
+        b.className = 'elev-row ' + cls;
+        b.innerHTML = '<b></b><span></span>';
+        b.firstChild.textContent = text;
+        b.lastChild.textContent = icon;
+        b.onclick = () => { this.overlay('elevator', false); fn(); };
+        list.appendChild(b);
+      };
+      if (d.tickets.elev30 > 0) special('ticket', '🎟️', t('elev.ticket', { n: d.tickets.elev30 }), () => this.G.elevator(30, 'ticket'));
+      special('btn-ad', '📺', t('elev.ad'), () => this.G.elevatorAd());
       for (const e of S.ELEVATOR) {
         const b = document.createElement('button');
         b.className = 'elev-row';
@@ -354,7 +464,7 @@
 
     lava(warnAmt, slow) {
       const L = this.lastHud;
-      const w = Math.round(warnAmt * 20) / 20;
+      const w = Math.round(warnAmt * 10) / 10; // few steps: fewer style changes while near the lava
       if (L.warn !== w) { $('lavaGlow').style.opacity = w; L.warn = w; }
       if (L.slow !== slow) { $('lavaSlow').classList.toggle('on', slow); L.slow = slow; }
     }
@@ -501,6 +611,7 @@
       $('rrRank').textContent = '+' + r.rankReward;
       $('rrPicked').textContent = '+' + r.picked;
       $('rrEarned').textContent = r.earned.toLocaleString();
+      this.tripleButton($('btnRaceTriple'), r.earned);
       // Ranked: rank-point change and promotions.
       const rp = $('rrRp');
       if (r.rp) {
@@ -518,6 +629,14 @@
       this.show('raceOver', true);
     }
 
+    // One "watch an ad for 3× coins" offer per result screen.
+    tripleButton(btn, earned) {
+      btn.dataset.earned = earned;
+      btn.disabled = false;
+      btn.classList.toggle('hidden', earned <= 0);
+      btn.lastElementChild.textContent = t('ad.triple');
+    }
+
     // ---- game over ----
     gameOver(r) {
       $('oFloor').textContent = '0';
@@ -527,6 +646,7 @@
       $('oPicked').textContent = r.picked;
       $('oBonus').textContent = r.bonus;
       $('oEarned').textContent = r.earned.toLocaleString();
+      this.tripleButton($('btnTriple'), r.earned);
       const bar = $('oBar');
       bar.style.width = '0';
       const maxv = Math.max(r.floor, r.prevBest, 1);

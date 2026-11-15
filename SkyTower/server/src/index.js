@@ -1,11 +1,12 @@
 // Worker entry: routes HTTP and WebSocket requests to the Durable Objects.
+import { PROTOCOL } from './rules.js';
 export { Matchmaker } from './matchmaker.js';
 export { Room } from './room.js';
 export { Ledger } from './ledger.js';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
@@ -14,12 +15,27 @@ export default {
     const url = new URL(req.url);
     if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
 
-    if (url.pathname === '/health') return Response.json({ ok: true, v: 1 }, { headers: CORS });
+    if (url.pathname === '/health') return Response.json({ ok: true, v: PROTOCOL }, { headers: CORS });
 
     if (url.pathname === '/profile') {
       const stub = env.LEDGER.get(env.LEDGER.idFromName('global'));
       const res = await stub.fetch('https://ledger/get?pid=' + encodeURIComponent(url.searchParams.get('pid') || ''));
       return new Response(res.body, { headers: { ...CORS, 'Content-Type': 'application/json' } });
+    }
+
+    // Leaderboards: POST /score {pid, name, best} · GET /top?type=floor|rp&pid=
+    if (url.pathname === '/score' && req.method === 'POST') {
+      const body = await req.text();
+      if (body.length > 512) return new Response('too large', { status: 413, headers: CORS });
+      const stub = env.LEDGER.get(env.LEDGER.idFromName('global'));
+      const res = await stub.fetch('https://ledger/score', { method: 'POST', body, headers: { 'Content-Type': 'application/json' } });
+      return new Response(res.body, { status: res.status, headers: { ...CORS, 'Content-Type': 'application/json' } });
+    }
+    if (url.pathname === '/top') {
+      const q = new URLSearchParams({ type: url.searchParams.get('type') || 'floor', pid: url.searchParams.get('pid') || '' });
+      const stub = env.LEDGER.get(env.LEDGER.idFromName('global'));
+      const res = await stub.fetch('https://ledger/top?' + q.toString());
+      return new Response(res.body, { headers: { ...CORS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
     }
 
     if (url.pathname === '/play') {

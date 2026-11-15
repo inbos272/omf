@@ -47,8 +47,24 @@
       lead: 'soft', motif: [[0, 2, 4], [4, 3, 4], [8, 5, 8], [18, 4, 2], [20, 3, 4], [24, 2, 8]],
       drums: { k: 'x...x...x...x...', s: '....x.......x...', h: '..x...x...x...x.', g: '' },
     },
+    { // Inferno: heavy, dark D phrygian with a flat-two lift and a pounding kick
+      bpm: 136, swing: 0, level: 0.95,
+      chords: [{ b: 38, v: [57, 58, 62, 65] }, { b: 39, v: [58, 63, 67, 70] }, { b: 46, v: [58, 62, 65, 70] }, { b: 45, v: [55, 58, 61, 64] }],
+      pad: { cut: 800, rev: 0.45 }, bass: { pat: 'x.xxx.xxx.xxx.xx', tone: 'saw' },
+      arp: { rate: 1, seq: [0, 1, 0, 2, 0, 1, 3, 1], tone: 'pluck', cut: 1500, vel: 0.8 },
+      lead: 'saw', motif: [[0, 1, 2], [2, 0, 2], [4, 1, 4], [12, 2, 2], [14, 3, 2], [16, 1, 6], [24, 0, 4], [28, 2, 4]],
+      drums: { k: 'x.x.x..xx.x.x..x', s: '....x.......x...', h: 'xxxxxxxxxxxxxxxx', g: '' },
+    },
+    { // Heaven: airy C lydian bells over choir-like pads, barely any drums
+      bpm: 84, swing: 0, level: 1.2,
+      chords: [{ b: 36, v: [59, 62, 64, 67] }, { b: 38, v: [57, 62, 66, 69] }, { b: 45, v: [59, 60, 64, 67] }, { b: 41, v: [59, 60, 64, 69] }],
+      pad: { cut: 2000, rev: 0.85 }, bass: { pat: 'x.......x.......', tone: 'sub' },
+      arp: { rate: 2, seq: [0, 2, 4, 6, 7, 5, 3, 1], tone: 'bell', cut: 0, vel: 0.75 },
+      lead: 'soft', motif: [[0, 4, 6], [6, 5, 2], [8, 6, 8], [16, 5, 4], [20, 3, 4], [24, 4, 8]],
+      drums: { k: 'x...............', s: '', h: '........o.......', g: '' },
+    },
   ];
-  const vel = (p, i) => (p && p[i] === 'x' ? 1 : p && p[i] === 'o' ? 0.55 : 0);
+  const vel =(p, i) => (p && p[i] === 'x' ? 1 : p && p[i] === 'o' ? 0.55 : 0);
 
   class Music {
     constructor(ctx, out) {

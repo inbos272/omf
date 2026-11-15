@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>ONE MORE FLOOR: SKY TOWER</title>
-<meta name="description" content="Climb an endless sky tower, outrun the rising lava, and race AI rivals. Works offline.">
+<title>Sky Tower</title>
+<meta name="description" content="Sky Tower — climb an endless tower, outrun the rising lava, and race rivals. Works offline.">
 <meta name="theme-color" content="#1f78ea">
 <meta name="color-scheme" content="light">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -23,10 +23,14 @@
 <div id="ui">
   <!-- MAIN MENU -->
   <section id="menu" class="screen hidden">
+    <div class="menu-top">
+      <button id="btnDaily" class="icon-btn emoji-btn" data-i18n-aria="daily.title">🎁<i id="dailyBadge" class="badge hidden"></i></button>
+      <button id="btnRank" class="icon-btn emoji-btn" data-i18n-aria="rank.title">🏆</button>
+    </div>
     <header class="logo">
-      <span class="logo-small">ONE MORE</span>
-      <span class="logo-big">FLOOR</span>
-      <span class="logo-pill">SKY TOWER</span>
+      <span class="logo-small">SKY</span>
+      <span class="logo-big">TOWER</span>
+      <span class="logo-pill" data-i18n="menu.tag"></span>
     </header>
     <div class="menu-stats">
       <div class="chip"><small data-i18n="menu.best"></small><b id="mBest">0</b></div>
@@ -110,6 +114,7 @@
         <div class="total"><dt data-i18n="over.earned"></dt><dd><i class="coin"></i><span id="oEarned">0</span></dd></div>
       </dl>
       <ul id="oRewards"></ul>
+      <button id="btnTriple" class="btn btn-wide btn-ad"><span>📺</span><span data-i18n="ad.triple"></span></button>
       <button id="btnAgain" class="btn btn-play" data-i18n="over.again"></button>
       <button id="btnOverMenu" class="btn btn-wide btn-ghost" data-i18n="pause.quit"></button>
     </div>
@@ -127,6 +132,7 @@
         <div><dt data-i18n="over.picked"></dt><dd id="rrPicked">0</dd></div>
         <div class="total"><dt data-i18n="over.earned"></dt><dd><i class="coin"></i><span id="rrEarned">0</span></dd></div>
       </dl>
+      <button id="btnRaceTriple" class="btn btn-wide btn-ad"><span>📺</span><span data-i18n="ad.triple"></span></button>
       <button id="btnRaceAgain" class="btn btn-play" data-i18n="race.again"></button>
       <button id="btnRaceMenu" class="btn btn-wide btn-ghost" data-i18n="pause.quit"></button>
     </div>
@@ -208,6 +214,41 @@
     </div>
   </section>
 
+  <!-- REVIVE -->
+  <section id="revive" class="screen modal hidden">
+    <div class="panel narrow revive-panel">
+      <div class="revive-ring"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="44"/><circle id="revRing" cx="50" cy="50" r="44"/></svg><span id="revFloor">0</span></div>
+      <h2 data-i18n="rev.title"></h2>
+      <p id="revSub" class="confirm-text"></p>
+      <button id="btnRevCoins" class="btn btn-play revive-coins"><i class="coin"></i><span id="revPrice">0</span></button>
+      <button id="btnRevTicket" class="btn btn-wide"><span>🎟️</span><span id="revTicket"></span></button>
+      <button id="btnRevAd" class="btn btn-wide btn-ad"><span>📺</span><span data-i18n="rev.ad"></span></button>
+      <button id="btnRevNo" class="btn btn-wide btn-ghost" data-i18n="rev.giveUp"></button>
+    </div>
+  </section>
+
+  <!-- DAILY REWARD -->
+  <section id="daily" class="screen modal hidden">
+    <div class="panel narrow">
+      <div class="panel-head"><h2>🎁 <span data-i18n="daily.title"></span></h2><button id="btnDailyClose" class="icon-btn" data-i18n-aria="common.close"><svg viewBox="0 0 24 24"><path d="M6.2 4.2L12 10l5.8-5.8 2 2L14 12l5.8 5.8-2 2L12 14l-5.8 5.8-2-2L10 12 4.2 6.2z"/></svg></button></div>
+      <p class="confirm-text" data-i18n="daily.sub"></p>
+      <div id="dailyGrid" class="daily-grid"></div>
+      <button id="btnDailyClaim" class="btn btn-play" data-i18n="daily.claim"></button>
+      <p class="credit"><span id="dailyTickets"></span></p>
+    </div>
+  </section>
+
+  <!-- RANKING -->
+  <section id="ranking" class="screen modal hidden">
+    <div class="panel narrow rank-panel">
+      <div class="panel-head"><h2>🏆 <span data-i18n="rank.title"></span></h2><button id="btnRankClose" class="icon-btn" data-i18n-aria="common.close"><svg viewBox="0 0 24 24"><path d="M6.2 4.2L12 10l5.8-5.8 2 2L14 12l5.8 5.8-2 2L12 14l-5.8 5.8-2-2L10 12 4.2 6.2z"/></svg></button></div>
+      <div class="tabs" id="rankTabs"><button data-type="floor" data-i18n="rank.floor"></button><button data-type="rp" data-i18n="rank.rp"></button></div>
+      <ol id="rankList" class="rank-list"></ol>
+      <div id="rankMe" class="rank-me"></div>
+      <p id="rankStatus" class="credit"></p>
+    </div>
+  </section>
+
   <!-- CONFIRM -->
   <section id="confirm" class="screen modal hidden">
     <div class="panel narrow">
@@ -227,6 +268,18 @@
     </div>
   </section>
 
+  <!-- AD (stand-in until AdMob / H5 ads are connected) -->
+  <div id="adScreen" class="ad-screen hidden">
+    <div class="ad-box">
+      <small class="ad-label">AD</small>
+      <div class="ad-art"><img src="icons/icon-192.png" alt=""></div>
+      <b data-i18n="ad.title"></b>
+      <p data-i18n="ad.placeholder"></p>
+      <span id="adTimer" class="ad-timer"></span>
+      <button id="btnAdClose" class="btn btn-play"></button>
+    </div>
+  </div>
+
   <div id="fatal" class="hidden"><div><h2 data-i18n="fatal.title"></h2><p data-i18n="fatal.text"></p></div></div>
 </div>
 
@@ -241,6 +294,7 @@
 <script src="js/music.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/save.js"></script>
+<script src="js/ads.js"></script>
 <script src="js/input.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/main.js"></script>
