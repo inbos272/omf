@@ -3,7 +3,14 @@
 (function () {
   'use strict';
   const S = window.SKY;
-  const SEND_HZ = 15, DELAY_MS = 120;
+  // Smoothness tuning. Rivals are drawn a little in the past so there are always two snapshots
+  // to blend between; that delay adapts to the measured network jitter instead of being fixed.
+  const SEND_HZ = 20;
+  const DELAY_MIN = 70, DELAY_MAX = 400, DELAY_START = 130; // ms
+  const EXTRAP_MAX = 0.22;   // s: keep a rival moving this long past its last snapshot
+  const SMOOTH_T = 0.09;     // s: how fast a position correction fades out
+  const SNAP_DIST = 2.5;     // corrections bigger than this jump instead of sliding
+  const PING_EVERY = 2;      // s: clock re-sync during a match
   const PROTOCOL = 2; // must match server/src/rules.js
   S.NET_PROTOCOL = PROTOCOL;
 
@@ -26,8 +33,16 @@
       this.roster = [];
       this.snaps = {};
       this.offset = 0;
+      this.offsetTarget = 0;
       this.bestRtt = 1e9;
+      this.rtts = [];            // recent [rtt, offset] samples; the lowest-rtt one sets the clock
+      this.pingT = 0;
+      this.delay = DELAY_START;  // current playback delay for rivals (ms)
+      this.latM = 0;             // snapshot age on arrival: running mean and deviation (ms)
+      this.latD = 20;
+      this.latN = 0;
       this.sendT = 0;
+      this.lastG = null;
       this.h = null;
       this.leftSlots = new Set();
     }
@@ -84,6 +99,25 @@
         return !!(r && r.ok);
       } catch (e) {
         return false;
+      }
+    }
+
+    // Register a nickname: 'ok' | 'taken' (someone else has it) | 'invalid' | 'offline' | 'outdated'
+    async claimNick(pid, name) {
+      if (!this.configured) return 'offline';
+      try {
+        const r = await this._timed(this.base() + '/nick', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pid, name }),
+        });
+        if (!r) return 'offline';
+        if (r.status === 404) return 'outdated';
+        const j = await r.json().catch(() => null);
+        if (!j || typeof j.ok !== 'boolean') return 'outdated'; // a server without the registry
+        return j.ok ? 'ok' : j.code === 'taken' ? 'taken' : 'invalid';
+      } catch (e) {
+        return 'offline';
       }
     }
 
@@ -160,17 +194,22 @@
           this.seed = m.seed;
           this.startAt = m.startAt;
           this.host = m.host;
-          this.offset = m.now - this.nowFn();
+          this.offset = this.offsetTarget = m.now - this.nowFn();
           this.phase = 'room';
-          for (let i = 0; i < 3; i++) setTimeout(() => this._send(this.rws, { t: 'ping', c: this.nowFn() }), i * 250);
+          for (let i = 0; i < 4; i++) setTimeout(() => this.ping(), i * 200);
           this.h.hello(m);
           break;
         case 'pong': {
-          const now = this.nowFn(), rtt = now - m.c;
-          if (rtt <= this.bestRtt) {
-            this.bestRtt = rtt;
-            this.offset = m.s + rtt / 2 - now;
-          }
+          // Keep the clock in step all match long: of the recent samples, trust the one with the
+          // shortest round trip (least queueing), and glide towards it rather than jump.
+          const now = this.nowFn(), rtt = Math.max(0, now - m.c);
+          this.rtts.push([rtt, m.s + rtt / 2 - now]);
+          if (this.rtts.length > 8) this.rtts.shift();
+          let best = this.rtts[0];
+          for (const s of this.rtts) if (s[0] < best[0]) best = s;
+          this.bestRtt = best[0];
+          this.offsetTarget = best[1];
+          if (this.rtts.length <= 4) this.offset = this.offsetTarget; // still before the start
           break;
         }
         case 'host':
@@ -209,26 +248,52 @@
       try { ws.send(JSON.stringify(msg)); } catch (e) { /* socket closing */ }
     }
 
+    ping() { this._send(this.rws, { t: 'ping', c: this.nowFn() }); }
+
     _push(slot, s) {
       const buf = this.snaps[slot] || (this.snaps[slot] = []);
+      // Out-of-order or duplicate packets would make the rival twitch backwards: drop them.
+      if (buf.length && s.ts <= buf[buf.length - 1].ts) return;
       buf.push(s);
-      if (buf.length > 24) buf.shift();
+      if (buf.length > 32) buf.shift();
+      // How old snapshots are when they arrive (network delay + jitter), as a running mean/deviation.
+      const age = this.serverNow() - s.ts;
+      if (age > -500 && age < 3000) {
+        const k = this.latN < 20 ? 1 / ++this.latN : 0.05;
+        const d = age - this.latM;
+        this.latM += d * k;
+        this.latD += (Math.abs(d) - this.latD) * k;
+      }
+    }
+
+    // Playback delay that covers the usual arrival age plus its spread plus one send interval.
+    delayTarget() {
+      const t = this.latM + 2.5 * this.latD + 1000 / SEND_HZ;
+      return Math.max(DELAY_MIN, Math.min(DELAY_MAX, t));
     }
 
     // Snapshot for a slot at server time t, linearly interpolated (x along the wrapped circle).
+    // Past the newest snapshot the rival keeps moving along its last velocity for a moment
+    // (with gravity while airborne) instead of freezing, then holds.
     sample(slot, t) {
       const buf = this.snaps[slot];
       if (!buf || !buf.length) return null;
       if (t <= buf[0].ts) return buf[0];
+      const C = S.CFG;
       for (let i = buf.length - 1; i > 0; i--) {
         const a = buf[i - 1], b = buf[i];
         if (t >= a.ts && t <= b.ts) {
           const k = b.ts > a.ts ? (t - a.ts) / (b.ts - a.ts) : 1;
           const x = a.x + S.wrapD(b.x - a.x) * k;
-          return { ...b, x: ((x % S.CFG.CIRC) + S.CFG.CIRC) % S.CFG.CIRC, y: a.y + (b.y - a.y) * k };
+          return { ...b, x: ((x % C.CIRC) + C.CIRC) % C.CIRC, y: a.y + (b.y - a.y) * k };
         }
       }
-      return buf[buf.length - 1];
+      const last = buf[buf.length - 1];
+      if (last.d) return last;
+      const e = Math.min(EXTRAP_MAX, (t - last.ts) / 1000);
+      const x = last.x + last.vx * e;
+      const y = last.g ? last.y : last.y + last.vy * e - 0.5 * (last.vy > 0 ? C.GRAV_UP : C.GRAV_DOWN) * e * e;
+      return { ...last, x: ((x % C.CIRC) + C.CIRC) % C.CIRC, y, extra: true };
     }
 
     static pack(b, ts) {
@@ -238,13 +303,24 @@
       };
     }
 
-    // Called every frame during an online race: sends my state (and the AI's if I host) at 15 Hz,
+    // Called every frame during an online race: sends my state (and the AI's if I host) at 20 Hz,
     // and moves remote bodies to their interpolated positions.
     update(sim, dt, onRemoteDeath) {
       if (this.phase !== 'room') return;
+      // Clock: periodic pings, small corrections glide in so the timer and lava never jump.
+      this.pingT -= dt;
+      if (this.pingT <= 0) { this.pingT = PING_EVERY; this.ping(); }
+      const drift = this.offsetTarget - this.offset;
+      this.offset = Math.abs(drift) > 400 ? this.offsetTarget : this.offset + drift * Math.min(1, dt * 1.5);
+      this.delay += (this.delayTarget() - this.delay) * Math.min(1, dt * 1.2);
+
       const now = this.serverNow();
       this.sendT -= dt;
-      if (this.sendT <= 0) {
+      // A jump or landing goes out at once (not up to 50 ms later), so rivals see it sooner.
+      const g = sim.p.grounded;
+      const changed = this.lastG !== null && g !== this.lastG && this.sendT < 1 / SEND_HZ - 0.03;
+      this.lastG = g;
+      if (this.sendT <= 0 || changed) {
         this.sendT = 1 / SEND_HZ;
         this._send(this.rws, { t: 's', ...Net.pack(sim.p, now) });
         if (this.isHost) {
@@ -253,7 +329,8 @@
           if (list.length) this._send(this.rws, { t: 'ai', list });
         }
       }
-      const t = now - DELAY_MS;
+      const t = now - this.delay;
+      const fade = Math.exp(-dt / SMOOTH_T);
       for (const b of sim.bodies) {
         if (!b.remote) continue;
         if (this.leftSlots.has(b.slot)) {
@@ -267,8 +344,24 @@
         }
         const s = this.sample(b.slot, t);
         if (!s) continue;
-        b.x = b.px = s.x;
-        b.y = b.py = s.y;
+        // Error smoothing: where the rival should be now (last drawn spot + its motion) versus the
+        // new target. A small mismatch (late packet, extrapolation corrected) fades out over ~90 ms
+        // instead of popping; a big one (respawn, push) snaps.
+        if (b.netSeen && !s.d) {
+          // offset = (previous drawn spot + expected motion) − new target, then decay
+          const ox = S.wrapD(b.x + b.netVx * dt - s.x), oy = b.y + b.netVy * dt - s.y;
+          const far = Math.hypot(ox, oy) > SNAP_DIST;
+          b.ox = far ? 0 : ox * fade;
+          b.oy = far ? 0 : oy * fade;
+        } else {
+          b.ox = b.oy = 0;
+        }
+        b.netSeen = true;
+        b.netVx = s.vx;
+        b.netVy = s.g ? 0 : s.vy;
+        const C = S.CFG;
+        b.x = b.px = (((s.x + b.ox) % C.CIRC) + C.CIRC) % C.CIRC;
+        b.y = b.py = s.y + b.oy;
         b.vx = s.vx;
         b.vy = s.vy;
         b.floor = s.f;

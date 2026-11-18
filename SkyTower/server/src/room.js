@@ -100,6 +100,7 @@ export class Room {
         break;
       case 's':
       case 'ev':
+        // Hot path (~20 msgs/s per player): relay straight away, nothing stored.
         this.broadcast({ ...msg, from: a.slot }, ws);
         break;
       case 'ai':
@@ -189,7 +190,7 @@ export class Room {
     const pub = {};
     for (const s in profiles) {
       const p = profiles[s];
-      pub[s] = { delta: p.delta, rp: p.rp, tier: p.tier, casualWins: p.casualWins };
+      pub[s] = { delta: p.delta, rp: p.rp, tier: p.tier, casualWins: p.casualWins, placed: p.placed, placeN: p.placeN, placedNow: p.placedNow };
     }
     this.broadcast({ t: 'end', void: m.void, order: order.map((e) => ({ slot: e.slot, floor: e.floor || 0, dc: !!e.dc })), profiles: pub });
     for (const ws of this.ctx.getWebSockets()) try { ws.close(1000, 'race over'); } catch (e) { /* already closed */ }

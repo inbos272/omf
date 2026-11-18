@@ -76,8 +76,43 @@
   };
   G.languageChosen = () => {
     ui.show('menu');
-    if (S.dailyInfo(S.Save.data).can) ui.openDaily();
+    afterLanguage();
   };
+  // First-run order: language → nickname → daily gift.
+  function afterLanguage() {
+    if (!S.Save.data.nickChosen) ui.showNickPick();
+    else G.nickDone();
+  }
+  G.nickDone = () => {
+    if (S.dailyInfo(S.Save.data).can && !params.has('bot')) ui.openDaily();
+  };
+
+  // ---------- nickname (unique across players, checked by the server) ----------
+  // → 'ok' | 'taken' | 'invalid' | 'empty' | 'local' (saved, server unreachable: checked later)
+  G.setNick = async (raw) => {
+    const d = S.Save.data, name = S.cleanNick(raw);
+    if (!name) return 'empty';
+    if (name === d.nick && d.nickOk) { d.nickChosen = true; S.Save.save(); return 'ok'; }
+    const res = await net.claimNick(d.pid, name);
+    if (res === 'taken' || res === 'invalid') return res;
+    d.nick = name;
+    d.nickChosen = true;
+    d.nickOk = res === 'ok';
+    S.Save.save();
+    return d.nickOk ? 'ok' : 'local';
+  };
+
+  // Make sure the current name is registered; false when someone else owns it (asks for a new one).
+  async function ensureNick() {
+    const d = S.Save.data;
+    if (d.nickOk || !net.configured) return true;
+    const res = await net.claimNick(d.pid, d.nick);
+    if (res === 'ok') { d.nickOk = true; S.Save.save(); }
+    if (res !== 'taken') return true; // offline / old server: nothing to check against
+    ui.overlay('versus', false);
+    ui.showNickPick('nick.takenNow');
+    return false;
+  }
 
   // ---------- adaptive quality ----------
   const adapt = { acc: 0, frames: 0, cool: 3, scale: 1 };
@@ -284,6 +319,7 @@
 
   // ---------- versus / online ----------
   const net = (G.net = new S.Net());
+  if (params.has('noserver')) net.baseUrl = ''; // tests: never touch the live server
   const online = () => G.mode === 'casual' || G.mode === 'ranked';
   let serverState = 'none';
 
@@ -294,14 +330,28 @@
     serverState = await net.health();
     if (serverState === 'ok') {
       const p = await net.profile(S.Save.data.pid);
-      if (p) Object.assign(S.Save.data, { casualWins: p.casualWins, rp: p.rp, tier: p.tier }), S.Save.save();
+      if (p) syncProfile(p);
     }
     if (!document.getElementById('versus').classList.contains('hidden')) ui.versus({ server: serverState });
   };
 
-  G.startOnline = (mode) => {
-    if (serverState !== 'ok') return;
+  // The server's numbers replace the local cache (older servers don't send placement fields).
+  function syncProfile(p) {
+    const d = S.Save.data;
+    Object.assign(d, { casualWins: p.casualWins, rp: p.rp, tier: p.tier });
+    if (p.placed !== undefined) d.placed = !!p.placed;
+    else d.placed = true;
+    if (p.placeN !== undefined) d.placeN = p.placeN;
+    if (p.nickSet && p.name && p.name === d.nick) d.nickOk = true;
+    S.Save.save();
+  }
+
+  G.startOnline = async (mode) => {
+    if (serverState !== 'ok' || G.state === 'matching' || G.nickBusy) return;
     audio.unlock();
+    G.nickBusy = true;
+    const nameOk = await ensureNick().finally(() => { G.nickBusy = false; });
+    if (!nameOk) return;
     const lo = loadout(), d = S.Save.data;
     G.mode = mode;
     G.state = 'matching';
@@ -404,8 +454,13 @@
     let rp = null;
     const prof = m && m.profiles && m.profiles[net.slot];
     if (prof) {
-      if (G.mode === 'ranked') rp = { delta: prof.delta, rp: prof.rp, tier: prof.tier, prevTier: d.tier };
-      Object.assign(d, { casualWins: prof.casualWins, rp: prof.rp, tier: prof.tier });
+      if (G.mode === 'ranked') {
+        rp = {
+          delta: prof.delta, rp: prof.rp, tier: prof.tier, prevTier: d.tier,
+          placed: prof.placed !== false, placeN: prof.placeN || 0, placedNow: !!prof.placedNow,
+        };
+      }
+      syncProfile(prof);
     }
     S.Save.save();
     countGame();
@@ -824,6 +879,7 @@
       skin: G.preview.skin,
       theme: G.preview.theme,
       dragYaw: G.dragYaw,
+      view: G.iconView || null,
     });
 
     if (inPlay) {
@@ -879,6 +935,7 @@
       cap.App.addListener('backButton', () => {
         const open = (id) => !document.getElementById(id).classList.contains('hidden');
         if (S.Ads.busy) return; // an ad is showing: it closes itself
+        if (open('nickPick')) return; // a nickname is required before going on
         if (open('confirm')) ui.overlay('confirm', false);
         else if (open('revive')) G.reviveWith(null);
         else if (open('daily')) ui.overlay('daily', false);
@@ -911,7 +968,14 @@
   else if (params.get('mode') === 'race') G.startRace(); // home-screen shortcut
   else {
     ui.show('menu');
-    if (S.dailyInfo(save).can && !params.has('bot')) ui.openDaily(); // greet with today's gift
+    afterLanguage(); // nickname if never chosen, then today's gift
+    // A name saved while offline gets its duplicate check now.
+    if (save.nickChosen && !save.nickOk && net.configured) {
+      net.claimNick(save.pid, save.nick).then((res) => {
+        if (res === 'ok') { S.Save.data.nickOk = true; S.Save.save(); }
+        else if (res === 'taken' && G.state === 'menu') ui.showNickPick('nick.takenNow');
+      });
+    }
   }
 
   if (params.has('bot')) {

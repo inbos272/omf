@@ -253,6 +253,7 @@
     return t;
   };
   S.RANKED_UNLOCK = 5;
+  S.PLACEMENT_GAMES = 5; // ranked placement matches before the first tier (server/src/rules.js)
 
   // Revive where you fell: higher floors cost more, and each further revive in a run doubles it.
   S.revivePrice = (floor, used) => Math.round(((200 + floor * 25) * Math.pow(2, used)) / 50) * 50;

@@ -1,7 +1,7 @@
 // Matchmaker: one Durable Object per mode ("casual", "ranked"). Players wait here on a WebSocket;
 // when five are queued (or the oldest has waited 10 s) a Room is created, filled with AI if needed,
 // and every matched player is told which room to join.
-import { pickGroup, makeToken, sanitizeName, RANKED_UNLOCK, FILL_AFTER_MS, ROOM_SIZE } from './rules.js';
+import { pickGroup, makeToken, sanitizeName, majorityRegion, RANKED_UNLOCK, FILL_AFTER_MS, ROOM_SIZE, PLACEMENT_RP } from './rules.js';
 
 const send = (ws, msg) => { try { ws.send(JSON.stringify(msg)); } catch (e) { /* socket already gone */ } };
 
@@ -24,6 +24,7 @@ export class Matchmaker {
       name: sanitizeName(url.searchParams.get('name')),
       skin: String(url.searchParams.get('skin') || '').slice(0, 24),
       ab: String(url.searchParams.get('ab') || '').slice(0, 24),
+      region: String(url.searchParams.get('region') || '').slice(0, 8), // set by the Worker from request.cf
     });
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -46,7 +47,10 @@ export class Matchmaker {
       const a = other.deserializeAttachment();
       if (other !== ws && a && a.pid === info.pid) other.close(4009, 'replaced');
     }
-    ws.serializeAttachment({ ...info, rp: profile.rp, joined: this.now() });
+    // The registered nickname wins over whatever the client sent, so names stay unique in races.
+    // Players still in placement are paired (and get AI) as if they were mid-Silver.
+    const name = profile.nickSet ? profile.name : info.name;
+    ws.serializeAttachment({ ...info, name, rp: profile.placed ? profile.rp : PLACEMENT_RP, joined: this.now() });
     await this.tick();
   }
 
@@ -82,7 +86,11 @@ export class Matchmaker {
     const players = group.players.map((p) => ({ pid: p.pid, name: p.name, skin: p.skin, ab: p.ab, rp: p.rp, token: makeToken() }));
     const avgRp = players.reduce((s, p) => s + p.rp, 0) / players.length;
     const seed = (Math.random() * 0x7fffffff) | 0;
-    await this.env.ROOM.get(id).fetch('https://room/init', {
+    // Start the room in the region most of its players connect from: every snapshot goes
+    // through it, so this sets the race's round-trip time.
+    const locationHint = majorityRegion(group.players.map((p) => p.region));
+    const stub = locationHint ? this.env.ROOM.get(id, { locationHint }) : this.env.ROOM.get(id);
+    await stub.fetch('https://room/init', {
       method: 'POST',
       body: JSON.stringify({ mode, seed, players, ai: group.ai, avgRp }),
     });

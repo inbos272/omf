@@ -193,6 +193,23 @@
   a('env.hell', '지옥', 'Inferno', '地獄', '地狱', 'Infierno');
   a('env.heaven', '천국', 'Heaven', '天国', '天堂', 'Cielo');
 
+  // ---- nickname ----
+  a('nick.title', '닉네임을 정해 주세요', 'Choose your nickname', 'ニックネームを決めよう', '请设置昵称', 'Elige tu apodo');
+  a('nick.sub', '다른 플레이어에게 보이는 이름이에요. 1~12자이고, 다른 사람과 같은 닉네임은 쓸 수 없어요.', 'Other players will see this name. 1–12 characters, and no two players can share one.', '他のプレイヤーに表示される名前です。1〜12文字、他の人と同じ名前は使えません。', '其他玩家会看到这个名字。1–12个字符，不能与他人重复。', 'Los demás jugadores verán este nombre. De 1 a 12 caracteres y no puede repetirse.');
+  a('nick.start', '시작하기', 'Start', 'はじめる', '开始', 'Empezar');
+  a('nick.checking', '확인하는 중…', 'Checking…', '確認中…', '检查中…', 'Comprobando…');
+  a('nick.empty', '닉네임을 입력해 주세요.', 'Please enter a nickname.', 'ニックネームを入力してください。', '请输入昵称。', 'Escribe un apodo.');
+  a('nick.taken', '이미 다른 플레이어가 쓰고 있는 닉네임이에요. 다른 닉네임을 선택해 주세요.', 'Another player already has this nickname. Please choose a different one.', 'このニックネームは他のプレイヤーが使っています。別の名前を選んでください。', '该昵称已被其他玩家使用，请换一个。', 'Otro jugador ya usa este apodo. Elige otro.');
+  a('nick.invalid', '사용할 수 없는 닉네임이에요.', 'That nickname can\'t be used.', 'そのニックネームは使えません。', '该昵称无法使用。', 'Ese apodo no se puede usar.');
+  a('nick.later', '서버에 연결할 수 없어 우선 저장했어요. 온라인 대전 전에 중복 여부를 확인해요.', 'Saved for now (server unreachable). It will be checked for duplicates before online play.', 'サーバーに接続できないため仮保存しました。オンライン対戦の前に重複を確認します。', '无法连接服务器，已暂存。在线对战前会检查是否重复。', 'Guardado por ahora (sin servidor). Se comprobará antes de jugar en línea.');
+  a('nick.takenNow', '지금 닉네임은 다른 플레이어가 먼저 등록했어요. 새 닉네임을 정해 주세요.', 'Another player registered your nickname first. Please choose a new one.', '今のニックネームは他のプレイヤーが先に登録しました。新しい名前を決めてください。', '你的昵称已被其他玩家抢先注册，请设置新昵称。', 'Otro jugador registró tu apodo antes. Elige uno nuevo.');
+
+  // ---- ranked placement ----
+  a('tier.unranked', '배치 중', 'Unranked', '未配置', '定级中', 'Sin rango');
+  a('vs.placement', '배치고사 {n}/{total} · 끝나면 브론즈~골드 배치', 'Placement {n}/{total} · then Bronze–Gold', '配置戦 {n}/{total}・終了後ブロンズ〜ゴールド', '定级赛 {n}/{total} · 结束后定为青铜~黄金', 'Clasificación {n}/{total} · luego Bronce–Oro');
+  a('rr.placing', '배치고사 {n}/{total}', 'Placement {n}/{total}', '配置戦 {n}/{total}', '定级赛 {n}/{total}', 'Clasificación {n}/{total}');
+  a('rr.placed', '배치 완료! {tier} 티어', 'Placed: {tier}!', '配置完了！{tier}', '定级完成！{tier}', '¡Clasificado: {tier}!');
+
   // ---- revive ----
   a('rev.title', '부활할까요?', 'Revive?', '復活しますか？', '要复活吗？', '¿Revivir?');
   a('rev.sub', '{f}층에서 바로 이어서 올라가요', 'Continue right from floor {f}', '{f}階からそのまま続行', '从{f}层继续攀登', 'Sigue desde el piso {f}');

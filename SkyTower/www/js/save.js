@@ -7,6 +7,8 @@
   const defaults = () => ({
     v: 1, coins: 0, best: 0, runs: 0, lang: null, raceWins: 0, racePlays: 0,
     nick: '', pid: '', casualWins: 0, rp: 0, tier: 'bronze', // online numbers are a cache of the server's
+    nickChosen: false, nickOk: false, // picked by the player / confirmed unique by the server
+    placed: false, placeN: 0,         // ranked placement matches
     skins: ['default'], themes: ['classic'], skin: 'default', theme: 'classic',
     claimed: [], seen: {},
     daily: { last: '', streak: 0 }, tickets: { elev30: 0, revive: 0 },
@@ -70,6 +72,8 @@
       if (!S.SKINS.some((s) => s.id === d.skin && d.skins.includes(s.id))) d.skin = 'default';
       if (!S.THEMES.some((t) => t.id === d.theme && d.themes.includes(t.id))) d.theme = 'classic';
       if (!d.nick) d.nick = 'Climber' + String(Math.floor(1000 + Math.random() * 9000));
+      // Saves from before the nickname screen: a name the player typed counts as chosen.
+      if (o && o.nickChosen === undefined) d.nickChosen = !/^Climber\d{4}$/.test(d.nick);
       if (!d.pid) d.pid = S.newId();
       this.data = d;
       return d;
@@ -86,7 +90,7 @@
       this.data = defaults();
       // Progress reset, not the language, name or online identity (rank lives on the server).
       // The daily calendar stays too, so a reset can't be used to claim today's gift twice.
-      for (const k of ['settings', 'lang', 'nick', 'pid', 'casualWins', 'rp', 'tier', 'daily', 'adEvery']) this.data[k] = old[k];
+      for (const k of ['settings', 'lang', 'nick', 'pid', 'casualWins', 'rp', 'tier', 'daily', 'adEvery', 'nickChosen', 'nickOk', 'placed', 'placeN']) this.data[k] = old[k];
       this.save();
     },
   };

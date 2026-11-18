@@ -760,6 +760,14 @@
       const tanH = 0.344 * (1 + cam.kick * 0.08 + (p.boost > 0 ? 0.05 : 0));
       v.tanV = clamp(tanH / r.aspect, 0.42, 0.86);
       r.computeView(v);
+      if (opts.view) {
+        // Fixed camera in world coordinates (used to shoot the app icon: tools/icon-shot.js).
+        const o = opts.view;
+        v.eye = [o.eye[0], o.eye[1] - oy, o.eye[2]];
+        v.at = [o.at[0], o.at[1] - oy, o.at[2]];
+        v.tanV = o.tanV || v.tanV;
+        r.computeView(v);
+      }
 
       // Light rig follows the camera so the visible side of the tower is always well lit.
       const F = this.frame;

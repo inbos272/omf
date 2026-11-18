@@ -13,6 +13,8 @@ export const RANKED_UNLOCK = 5;       // casual wins needed for ranked
 export const PLACE_RP = [40, 20, 5, -10, -20];
 export const TOP_N = 100;             // leaderboard length
 export const MAX_FLOOR = 100000;      // best-floor submissions above this are rejected
+export const PLACEMENT_GAMES = 5;     // ranked games before a first tier is given
+export const PLACEMENT_RP = 450;      // rating used to pair and pick AI for players still in placement
 
 export const TIERS = [
   { id: 'bronze', rp: 0 }, { id: 'silver', rp: 300 }, { id: 'gold', rp: 700 },
@@ -38,8 +40,45 @@ export function aiSkillForRp(rp, r) {
 }
 
 export function sanitizeName(s) {
-  const clean = String(s || '').replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, 12);
+  const clean = cleanName(s);
   return clean || 'Climber';
+}
+export function cleanName(s) {
+  return String(s || '').replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, 12);
+}
+// Two nicknames clash when they look the same: case, width (ＡＢ vs AB) and spaces are ignored.
+export function nameKey(s) {
+  return cleanName(s).normalize('NFKC').toLowerCase().replace(/\s+/g, '');
+}
+
+// Placement: after PLACEMENT_GAMES ranked games the average finish decides the first tier.
+// Each place is worth [100, 75, 50, 25, 0] points; the average maps to
+// Gold 700–850 (avg ≥ 75, i.e. mostly 1st–2nd), Silver 300–650 (avg ≥ 40), otherwise Bronze 0–250.
+export function placementRp(places) {
+  const PTS = [100, 75, 50, 25, 0];
+  const avg = places.reduce((s, p) => s + (PTS[p - 1] ?? 0), 0) / Math.max(1, places.length);
+  if (avg >= 75) return 700 + Math.round(((avg - 75) / 25) * 150);
+  if (avg >= 40) return 300 + Math.round(((avg - 40) / 35) * 350);
+  return Math.round((avg / 40) * 250);
+}
+
+// Cloudflare region hint for a match room, from where its players connect (request.cf).
+export function regionOf(cf) {
+  if (!cf) return '';
+  const lon = Number(cf.longitude), c = cf.continent;
+  if (c === 'NA') return lon < -100 ? 'wnam' : 'enam';
+  if (c === 'SA') return 'sam';
+  if (c === 'EU') return lon > 20 ? 'eeur' : 'weur';
+  if (c === 'AF') return 'afr';
+  if (c === 'OC') return 'oc';
+  if (c === 'AS') return lon < 60 ? 'me' : 'apac';
+  return '';
+}
+export function majorityRegion(list) {
+  const n = {};
+  let best = '', bestN = 0;
+  for (const r of list) if (r) { n[r] = (n[r] || 0) + 1; if (n[r] > bestN) { best = r; bestN = n[r]; } }
+  return best;
 }
 
 // Disconnected players last, then higher floor, then who reached it first.
@@ -53,16 +92,13 @@ export function orderResults(entries) {
 export function pickGroup(queue, now, mode) {
   if (!queue.length) return null;
   const oldest = queue[0];
-  if (mode === 'ranked') {
-    // Closest ratings to the longest-waiting player.
-    const near = queue.slice(1).sort((a, b) => Math.abs(a.rp - oldest.rp) - Math.abs(b.rp - oldest.rp));
-    const group = [oldest, ...near.slice(0, ROOM_SIZE - 1)];
-    if (group.length === ROOM_SIZE) return { players: group, ai: 0 };
-    if (now - oldest.joined >= FILL_AFTER_MS) return { players: group, ai: ROOM_SIZE - group.length };
-    return null;
-  }
-  if (queue.length >= ROOM_SIZE) return { players: queue.slice(0, ROOM_SIZE), ai: 0 };
-  if (now - oldest.joined >= FILL_AFTER_MS) return { players: queue.slice(), ai: ROOM_SIZE - queue.length };
+  // Players near the longest-waiting one come first (a far-away player means a laggy race).
+  const far = (e) => (oldest.region && e.region && e.region !== oldest.region ? 1 : 0);
+  const rest = queue.slice(1).sort((a, b) => far(a) - far(b)
+    || (mode === 'ranked' ? Math.abs(a.rp - oldest.rp) - Math.abs(b.rp - oldest.rp) : a.joined - b.joined));
+  const group = [oldest, ...rest.slice(0, ROOM_SIZE - 1)];
+  if (group.length === ROOM_SIZE) return { players: group, ai: 0 };
+  if (now - oldest.joined >= FILL_AFTER_MS) return { players: group, ai: ROOM_SIZE - group.length };
   return null;
 }
 

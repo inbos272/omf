@@ -162,6 +162,7 @@
       <div class="scroll">
         <h3 data-i18n="set.nick"></h3>
         <div class="nick-row"><input id="sNick" type="text" maxlength="12" autocomplete="off" spellcheck="false"><button id="btnNickSave" class="btn btn-wide" data-i18n="set.nickSave"></button></div>
+        <p id="sNickMsg" class="nick-msg"></p>
         <h3 data-i18n="set.lang"></h3>
         <div class="langs" id="sLang"></div>
         <h3 data-i18n="set.sound"></h3>
@@ -256,6 +257,18 @@
       <p class="confirm-text" data-i18n="confirm.text"></p>
       <button id="btnResetYes" class="btn btn-wide btn-danger" data-i18n="confirm.yes"></button>
       <button id="btnResetNo" class="btn btn-wide" data-i18n="confirm.no"></button>
+    </div>
+  </section>
+
+  <!-- FIRST RUN: NICKNAME -->
+  <section id="nickPick" class="screen modal hidden">
+    <div class="panel narrow nick-panel">
+      <div class="nick-hero">🏷️</div>
+      <h2 data-i18n="nick.title"></h2>
+      <p class="confirm-text" data-i18n="nick.sub"></p>
+      <input id="npInput" class="nick-input" type="text" maxlength="12" autocomplete="off" spellcheck="false" enterkeyhint="done">
+      <p id="npMsg" class="nick-msg"></p>
+      <button id="btnNpOk" class="btn btn-play" data-i18n="nick.start"></button>
     </div>
   </section>
 

@@ -50,14 +50,10 @@
       $('btnMtCancel').onclick = () => G.cancelOnline();
       $('btnElev').onclick = () => this.openElevator();
       $('btnElevClose').onclick = () => this.overlay('elevator', false);
-      $('btnNickSave').onclick = () => {
-        const n = S.cleanNick($('sNick').value);
-        if (!n) { $('sNick').value = S.Save.data.nick; return; }
-        S.Save.data.nick = n;
-        S.Save.save();
-        $('sNick').value = n;
-        this.toast(t('set.nickSaved'), 1400);
-      };
+      $('btnNickSave').onclick = () => this.submitNick($('sNick'), $('sNickMsg'), $('btnNickSave'), false);
+      $('btnNpOk').onclick = () => this.submitNick($('npInput'), $('npMsg'), $('btnNpOk'), true);
+      $('npInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btnNpOk').click(); });
+      $('sNick').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btnNickSave').click(); });
       $('btnDaily').onclick = () => this.openDaily();
       $('btnDailyClose').onclick = () => this.overlay('daily', false);
       $('btnDailyClaim').onclick = () => G.claimDaily();
@@ -134,6 +130,41 @@
       drag.addEventListener('pointercancel', end);
     }
 
+    // ---- nickname ----
+    nickMsg(el, key, cls) {
+      el.textContent = key ? t(key) : '';
+      el.className = 'nick-msg' + (cls ? ' ' + cls : '');
+    }
+
+    // First run (or after someone else took the name): nobody plays online without a unique name.
+    showNickPick(msgKey) {
+      const d = S.Save.data;
+      $('npInput').value = d.nickChosen ? d.nick : '';
+      $('npInput').placeholder = d.nick;
+      this.nickMsg($('npMsg'), msgKey || '', msgKey ? 'bad' : '');
+      this.overlay('nickPick', true);
+    }
+
+    async submitNick(input, msg, btn, first) {
+      if (btn.disabled) return;
+      btn.disabled = true;
+      this.nickMsg(msg, 'nick.checking');
+      const res = await this.G.setNick(input.value);
+      btn.disabled = false;
+      const bad = { empty: 'nick.empty', taken: 'nick.taken', invalid: 'nick.invalid' }[res];
+      if (bad) {
+        this.nickMsg(msg, bad, 'bad');
+        input.focus();
+        return;
+      }
+      input.value = S.Save.data.nick;
+      this.nickMsg(msg, res === 'ok' ? 'set.nickSaved' : 'nick.later', res === 'ok' ? 'good' : '');
+      if (first) {
+        this.overlay('nickPick', false);
+        this.G.nickDone();
+      }
+    }
+
     // ---- language ----
     _buildLangs(box, first) {
       for (const L of S.LANGS) {
@@ -200,6 +231,7 @@
       for (const b of $('sQuality').children) b.classList.toggle('on', b.dataset.q === st.quality);
       for (const b of $('sLang').children) b.classList.toggle('on', b.dataset.lang === S.lang);
       $('sNick').value = S.Save.data.nick;
+      this.nickMsg($('sNickMsg'), '');
     }
 
     openSettings() {
@@ -317,11 +349,13 @@
       $('vsCasualSub').textContent = t('vs.casualSub', { n: d.casualWins });
       const unlocked = d.casualWins >= S.RANKED_UNLOCK;
       $('vsRanked').disabled = !online || !unlocked;
-      const tier = S.tierFor(d.rp);
-      $('vsRankIcon').textContent = unlocked ? '🏆' : '🔒';
+      const tier = S.tierFor(d.rp), placing = unlocked && !d.placed;
+      $('vsRankIcon').textContent = !unlocked ? '🔒' : placing ? '🎯' : '🏆';
       $('vsRankIcon').style.color = tier.col;
-      $('vsRankedSub').textContent = unlocked ? t('vs.rankedSub', { tier: t('tier.' + tier.id), rp: d.rp }) : t('vs.locked', { n: d.casualWins });
-      $('vsRankedSub').style.color = unlocked ? tier.col : '';
+      $('vsRankedSub').textContent = !unlocked ? t('vs.locked', { n: d.casualWins })
+        : placing ? t('vs.placement', { n: d.placeN, total: S.PLACEMENT_GAMES })
+        : t('vs.rankedSub', { tier: t('tier.' + tier.id), rp: d.rp });
+      $('vsRankedSub').style.color = unlocked && !placing ? tier.col : '';
       $('vsStatus').textContent = st.server === 'none' ? t('vs.noServer') : st.server === 'offline' ? t('vs.offline')
         : st.server === 'outdated' ? t('vs.outdated') : st.server === 'checking' ? t('vs.checking') : '';
       this.overlay('versus', true);
@@ -616,10 +650,22 @@
       const rp = $('rrRp');
       if (r.rp) {
         rp.classList.remove('hidden');
+        const dd = rp.querySelector('dd');
         const sign = r.rp.delta >= 0 ? '+' : '';
-        rp.querySelector('dd').textContent = `${sign}${r.rp.delta} → ${r.rp.rp} RP`;
-        rp.querySelector('dd').style.color = r.rp.delta >= 0 ? '#6ee7a8' : '#ff9a9a';
-        if (r.rp.tier !== r.rp.prevTier) {
+        if (r.rp.placedNow) {
+          // Fifth placement match: the first tier is revealed.
+          const tr = S.tierFor(r.rp.rp);
+          dd.textContent = `${t('tier.' + tr.id)} · ${r.rp.rp} RP`;
+          dd.style.color = tr.col;
+          $('rrTag').textContent = t('rr.placed', { tier: t('tier.' + tr.id) });
+        } else if (!r.rp.placed) {
+          dd.textContent = t('rr.placing', { n: r.rp.placeN, total: S.PLACEMENT_GAMES });
+          dd.style.color = '#ffd23f';
+        } else {
+          dd.textContent = `${sign}${r.rp.delta} → ${r.rp.rp} RP`;
+          dd.style.color = r.rp.delta >= 0 ? '#6ee7a8' : '#ff9a9a';
+        }
+        if (!r.rp.placedNow && r.rp.placed && r.rp.tier !== r.rp.prevTier) {
           const up = S.TIERS.findIndex((x) => x.id === r.rp.tier) > S.TIERS.findIndex((x) => x.id === r.rp.prevTier);
           $('rrTag').textContent = t(up ? 'rr.promoted' : 'rr.demoted', { tier: t('tier.' + r.rp.tier) });
         }

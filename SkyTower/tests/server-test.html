@@ -30,6 +30,7 @@ class Storage {
   constructor() { this.map = new Map(); this.alarm = null; }
   async get(k) { const v = this.map.get(k); return v === undefined ? undefined : structuredClone(v); }
   async put(k, v) { this.map.set(k, structuredClone(v)); }
+  async delete(k) { return this.map.delete(k); }
   async setAlarm(t) { this.alarm = t; }
 }
 class Ctx {
@@ -176,6 +177,14 @@ function unitRules() {
     rules.pickGroup([{ rp: 0, joined: 0 }], 10000, 'casual').ai === 4,
     rules.pickGroup(Array.from({ length: 6 }, (_, i) => ({ rp: i * 100, joined: i })), 1, 'casual').players.length === 5,
     rules.sanitizeName('  <b>Hi\u0001</b>  ') === 'bHi/b', rules.sanitizeName('') === 'Climber',
+    rules.nameKey('Sky Ace') === rules.nameKey('ｓｋｙａｃｅ'),
+    rules.placementRp([1, 1, 1, 1, 1]) === 850, rules.placementRp([1, 2, 1, 3, 2]) === 730, rules.placementRp([3, 2, 4, 3, 3]) === 400,
+    rules.placementRp([5, 4, 5, 3, 4]) === 125, rules.placementRp([5, 5, 5, 5, 5]) === 0,
+    rules.regionOf({ continent: 'AS', longitude: 127 }) === 'apac', rules.regionOf({ continent: 'NA', longitude: -122 }) === 'wnam', rules.regionOf(null) === '',
+    rules.majorityRegion(['apac', 'weur', 'apac', '']) === 'apac',
+    // Nearby players are grouped before a far-away one who queued earlier.
+    rules.pickGroup([{ region: 'apac', joined: 0 }, { region: 'weur', joined: 1 }, ...[2, 3, 4, 5].map((j) => ({ region: 'apac', joined: j }))], 6, 'casual')
+      .players.every((p) => p.region === 'apac'),
   ];
   log(`RULES: ${ok.filter(Boolean).length}/${ok.length} checks pass`);
   return ok.every(Boolean);
@@ -216,7 +225,8 @@ async function casualMatch() {
 async function rankedHostDrop() {
   const env = makeEnv();
   const ledger = env.LEDGER.get(env.LEDGER.idFromName('global')).o;
-  for (const n of ['Dee', 'Eli']) await ledger.ctx.storage.put('p:pid-' + n, { pid: 'pid-' + n, name: n, rp: 650, casualWins: 5, rankedGames: 0 });
+  // Players saved before placement matches existed (ranked games played, no `placed` field).
+  for (const n of ['Dee', 'Eli']) await ledger.ctx.storage.put('p:pid-' + n, { pid: 'pid-' + n, name: n, rp: 650, casualWins: 5, rankedGames: 3 });
   const locked = makeClient(env, 'Fin', 'bot', 0.5);
   locked.net.find('ranked', locked.me, locked.handlers);
   await flush();
@@ -236,7 +246,7 @@ async function rankedHostDrop() {
   const dropped = end && end.order.find((o) => o.slot === hostBefore.net.slot);
   const lastIsDropped = end && end.order[end.order.length - 1].slot === hostBefore.net.slot && dropped.dc;
   const pDrop = await ledger.get(hostBefore.me.pid), pOther = await ledger.get(other.me.pid);
-  const rpOk = pDrop.rp === 630 && pOther.rp !== 650 && pOther.rankedGames === 1;
+  const rpOk = pDrop.rp === 630 && pOther.rp !== 650 && pOther.rankedGames === 4;
   log(`RANKED: locked before 5 wins=${lockOk} | host dropped at 8s → new host took AI=${tookOver} | dropped player last+dc=${lastIsDropped} | RP ${pDrop.rp} (dropped) / ${pOther.rp} (other) ok=${rpOk}`);
   return lockOk && tookOver && lastIsDropped && rpOk;
 }
@@ -328,9 +338,14 @@ async function leaderboard() {
   const t1 = await net.top('floor', pid('ann'));
   const order1 = t1.top.map((e) => e.name + ':' + e.v).join(',');
   const noIds = t1.top.every((e) => !('pid' in e)) && t1.top.filter((e) => e.me).length === 1;
-  await net.submitScore(pid('ann'), 'Anna', 10); // rename only
+  await net.claimNick(pid('ann'), 'Anna'); // renaming goes through the nickname registry
   const t2 = await net.top('floor', pid('ann'));
   const ledger = env.LEDGER.get(env.LEDGER.idFromName('global')).o;
+  for (const id of [pid('ann'), pid('bob')]) { // past their placement matches
+    const p = await ledger.get(id);
+    p.placed = true;
+    await ledger.ctx.storage.put('p:' + id, p);
+  }
   await ledger.apply({ mode: 'ranked', players: [{ pid: pid('ann'), name: 'Anna', place: 1 }, { pid: pid('bob'), name: 'Bob', place: 5 }] });
   await ledger.apply({ mode: 'ranked', players: [{ pid: pid('ann'), name: 'Anna', place: 5 }] }); // peak stays 40
   const rp = await net.top('rp', pid('ann'));
@@ -342,6 +357,117 @@ async function leaderboard() {
   return sent.every(Boolean) && rejected.every((x) => !x) && order1 === 'Bob:300,Ann:120,Cid:120' && t1.me.rank === 2 && t1.me.v === 120 && noIds
     && t2.top[1].name === 'Anna' && t2.top[1].v === 120 && rp.top.length === 1 && rp.top[0].name === 'Anna' && rp.top[0].v === 40 && rp.me.v === 40
     && outsider.me.rank === null && full.top.length === rules.TOP_N && full.me.rank === null && full.me.v === 120 && old === 'outdated';
+}
+
+// Nicknames: one owner per name (case/width/space-insensitive), renaming frees the old name,
+// and the matchmaker uses the registered name whatever the client sends.
+async function nicknames() {
+  const env = makeEnv();
+  const net = new S.Net({ baseUrl: 'https://fake', fetchFn: (u, o) => worker.fetch(new Request(u, o), env), socketFactory: env.socket, now: () => clock });
+  const A = 'pid-ann-0000', B = 'pid-bob-0000';
+  const r = [];
+  r.push(await net.claimNick(A, 'Sky Ace'));     // ok
+  r.push(await net.claimNick(B, 'sky ace'));     // taken (case)
+  r.push(await net.claimNick(B, 'ＳＫＹＡＣＥ'));  // taken (full width, spaces)
+  r.push(await net.claimNick(A, 'Sky Ace'));     // ok (already mine)
+  r.push(await net.claimNick(B, 'Bobby'));       // ok
+  r.push(await net.claimNick(A, 'Ace'));         // ok, frees "Sky Ace"
+  r.push(await net.claimNick(B, 'Sky Ace'));     // ok now
+  r.push(await net.claimNick(A, 'Bobby'));       // taken? no: Bob renamed, so free → ok
+  r.push(await net.claimNick(A, '   '));         // invalid
+  const want = 'ok,taken,taken,ok,ok,ok,ok,ok,invalid';
+  const old = await new S.Net({ baseUrl: 'https://x', fetchFn: async () => new Response('Sky Tower online server') }).claimNick(A, 'X');
+  // Results with someone else's name don't rename a registered player.
+  const ledger = env.LEDGER.get(env.LEDGER.idFromName('global')).o;
+  await ledger.apply({ mode: 'casual', players: [{ pid: B, name: 'Bobby', place: 1 }] });
+  const bAfter = (await ledger.get(B)).name;
+  // The matchmaker shows the registered name, not the one in the request.
+  const c = makeClient(env, 'Cheat', 'bot', 0.5);
+  c.me.pid = B;
+  c.me.name = 'Bobby';
+  c.net.find('casual', c.me, c.handlers);
+  await flush();
+  const queued = env.MATCH.get(env.MATCH.idFromName('casual')).o.queue();
+  const shown = queued.length ? queued[0].name : '?';
+  c.net.cancel();
+  await flush();
+  log(`NICKNAMES: ${r.join(',')} (want ${want}) | old server → ${old} | results can't steal a name: ${bAfter} | queue shows registered name: ${shown}`);
+  return r.join() === want && old === 'outdated' && bAfter === 'Sky Ace' && shown === 'Sky Ace';
+}
+
+// Ranked placement: five games with no RP change, then a first tier from Bronze to Gold.
+async function placement() {
+  const env = makeEnv();
+  const ledger = env.LEDGER.get(env.LEDGER.idFromName('global')).o;
+  const run = async (pid, places) => {
+    const seen = [];
+    for (const place of places) {
+      const out = await ledger.apply({ mode: 'ranked', players: [{ pid, name: pid.slice(4, 8), place }] });
+      seen.push(out[pid]);
+    }
+    return seen;
+  };
+  const gold = await run('pid-gold-0000', [1, 2, 1, 3, 2]);
+  const silver = await run('pid-silv-0000', [3, 2, 4, 3, 3]);
+  const bronze = await run('pid-brnz-0000', [5, 4, 5, 3, 4]);
+  const quiet = gold.slice(0, 4).every((p, i) => !p.placed && p.rp === 0 && p.delta === 0 && p.tier === 'unranked' && p.placeN === i + 1);
+  const g5 = gold[4], s5 = silver[4], b5 = bronze[4];
+  const tiers = [g5, s5, b5].map((p) => `${p.tier}:${p.rp}${p.placedNow ? '*' : ''}`).join(' ');
+  const after = (await run('pid-gold-0000', [1]))[0];
+  // Placement players wait in the queue as if they were mid-Silver.
+  const c = makeClient(env, 'Newb', 'bot', 0.5);
+  c.me.pid = 'pid-newb-0000';
+  await ledger.ctx.storage.put('p:' + c.me.pid, { pid: c.me.pid, name: 'Newb', casualWins: 5, rankedGames: 0, placed: false, placements: [] });
+  c.net.find('ranked', c.me, c.handlers);
+  await flush();
+  const q = env.MATCH.get(env.MATCH.idFromName('ranked')).o.queue();
+  const pairRp = q.length ? q[0].rp : -1;
+  c.net.cancel();
+  await flush();
+  const board = await ledger.top('rp', 'pid-gold-0000');
+  log(`PLACEMENT: games 1-4 silent=${quiet} | after 5: ${tiers} | next game ${after.delta >= 0 ? '+' : ''}${after.delta} → ${after.rp} | queue rating while placing ${pairRp} | rp board ${board.top.map((e) => e.name + ':' + e.v).join(',')}`);
+  return quiet && g5.placedNow && g5.tier === 'gold' && g5.rp === 730 && s5.tier === 'silver' && s5.rp === 400 && b5.tier === 'bronze' && b5.rp === 125
+    && after.delta === 40 && after.rp === 770 && !after.placedNow && pairRp === rules.PLACEMENT_RP && board.top.length === 3 && board.top[0].v === 770;
+}
+
+// Network smoothing: a rival moving at a steady 4 u/s, sent at 20 Hz over a link with
+// 40–160 ms delay (so packets arrive bunched and out of order) and 5% loss. Drawn at 60 fps it
+// must move forward every frame, at close to its real speed.
+function netSmooth() {
+  let now = 1e6;
+  const net = new S.Net({ baseUrl: '', now: () => now });
+  net.phase = 'room';
+  net.slot = 0;
+  net.roster = [{ slot: 0 }, { slot: 1 }];
+  const me = { x: 0, y: 0, vx: 0, vy: 0, floor: 0, floorT: 0, grounded: true, dead: false, shields: 0, human: true };
+  const them = { slot: 1, remote: true, x: 0, y: 5, vx: 0, vy: 0 };
+  const sim = { p: me, bodies: [me, them] };
+  const rng = S.mulberry(7);
+  const inbox = [];
+  for (let ts = now; ts < now + 9000; ts += 50) {
+    if (rng() < 0.05) continue;
+    const tsec = (ts - 1e6) / 1000;
+    inbox.push({ at: ts + 40 + rng() * 120, s: { ts, x: 4 * tsec, y: 5, vx: 4, vy: 0, f: 1, ft: 0, g: 1, d: 0, sh: 0 } });
+  }
+  inbox.sort((a, b) => a.at - b.at);
+  const dt = 1 / 60, ideal = 4 * dt;
+  let back = 0, worst = 0, sumErr = 0, n = 0, prev = null, lag = 0;
+  for (let f = 0; f < 60 * 8.5; f++) {
+    now += dt * 1000;
+    while (inbox.length && inbox[0].at <= now) net._push(1, inbox.shift().s);
+    net.update(sim, dt);
+    if (f > 120 && prev !== null) {
+      const step = S.wrapD(them.x - prev);
+      if (step < 0) back++;
+      worst = Math.max(worst, Math.abs(step - ideal));
+      sumErr += Math.abs(step - ideal);
+      n++;
+      lag = Math.max(lag, 4 * ((now - 1e6) / 1000) - them.x);
+    }
+    prev = them.x;
+  }
+  log(`NET SMOOTH: playback delay settled at ${net.delay.toFixed(0)} ms | backward steps ${back} | per-frame step error avg ${(sumErr / n).toFixed(4)} max ${worst.toFixed(4)} (ideal step ${ideal.toFixed(4)}) | trails truth by ≤${lag.toFixed(2)} u`);
+  return back === 0 && worst < ideal * 0.6 && net.delay > 70 && net.delay < 400;
 }
 
 async function versionCheck() {
@@ -360,6 +486,9 @@ async function versionCheck() {
     pass = unitRules() && pass;
     pass = (await versionCheck()) && pass;
     pass = (await leaderboard()) && pass;
+    pass = (await nicknames()) && pass;
+    pass = (await placement()) && pass;
+    pass = netSmooth() && pass;
     pass = (await refreshAfterFall()) && pass;
     pass = (await casualMatch()) && pass;
     pass = (await rankedHostDrop()) && pass;

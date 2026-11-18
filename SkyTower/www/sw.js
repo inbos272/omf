@@ -1,6 +1,6 @@
 // Network-first service worker: online players always get the latest upload,
 // and after one visit the game still runs with no network.
-const CACHE = 'skytower-v7';
+const CACHE = 'skytower-v8';
 const FILES = [
   './', 'index.html', 'manifest.webmanifest', 'css/game.css',
   'js/config.js', 'js/data.js', 'js/i18n.js', 'js/sim.js', 'js/bot.js', 'js/net.js', 'js/gfx.js', 'js/scene.js', 'js/music.js', 'js/audio.js',

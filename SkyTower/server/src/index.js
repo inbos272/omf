@@ -1,5 +1,5 @@
 // Worker entry: routes HTTP and WebSocket requests to the Durable Objects.
-import { PROTOCOL } from './rules.js';
+import { PROTOCOL, regionOf } from './rules.js';
 export { Matchmaker } from './matchmaker.js';
 export { Room } from './room.js';
 export { Ledger } from './ledger.js';
@@ -38,9 +38,21 @@ export default {
       return new Response(res.body, { headers: { ...CORS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
     }
 
+    // Nickname registry: POST /nick {pid, name} → {ok, name} | {ok:false, code:'taken'|'invalid'}
+    if (url.pathname === '/nick' && req.method === 'POST') {
+      const body = await req.text();
+      if (body.length > 512) return new Response('too large', { status: 413, headers: CORS });
+      const stub = env.LEDGER.get(env.LEDGER.idFromName('global'));
+      const res = await stub.fetch('https://ledger/nick', { method: 'POST', body, headers: { 'Content-Type': 'application/json' } });
+      return new Response(res.body, { status: res.status, headers: { ...CORS, 'Content-Type': 'application/json' } });
+    }
+
     if (url.pathname === '/play') {
       const mode = url.searchParams.get('mode') === 'ranked' ? 'ranked' : 'casual';
-      return env.MATCH.get(env.MATCH.idFromName(mode)).fetch(req);
+      // Pass the player's region along (the matchmaker uses it to group nearby players).
+      const fwd = new URL(req.url);
+      fwd.searchParams.set('region', regionOf(req.cf));
+      return env.MATCH.get(env.MATCH.idFromName(mode)).fetch(new Request(fwd.toString(), req));
     }
 
     if (url.pathname === '/room') {
