@@ -59,7 +59,10 @@
   G.input = input;
 
   G.vibrate = (ms) => {
-    if (!G.bot && S.Save.data.settings.haptics && navigator.vibrate) navigator.vibrate(ms);
+    if (G.bot || !S.Save.data.settings.haptics || !navigator.vibrate) return;
+    // Browsers refuse (and log an error) before the first real tap on the page.
+    if (navigator.userActivation && !navigator.userActivation.hasBeenActive) return;
+    try { navigator.vibrate(ms); } catch (e) { /* not allowed here */ }
   };
 
   G.applyControls = () => {
@@ -224,6 +227,7 @@
     S.Save.data.runs++;
     G.revives = 0;
     G.adRevived = false;
+    G.coinRevived = false;
     beginHud('solo');
     G.state = 'play';
     updateHud();
@@ -411,11 +415,12 @@
       G.sentResult = true;
       net.sendResult(sim.p);
     }
-    // Host: report AI as they fall; once every human is out, finish the AI race instantly.
+    // Host: report AI as they fall; once every human is out, play the AI race out at high speed
+    // (a few ms per frame) and report the results. Returns the race time still to simulate.
     net.settleAi(sim, S.RACE.dur - elapsed, (ais, left) => {
-      G.ff = true;
-      for (let tLeft = left; tLeft > 0 && ais.some((b) => !b.dead); tLeft -= C.DT) sim.step(idleInput);
-      G.ff = false;
+      let tLeft = left;
+      fastSteps(() => tLeft <= 0 || !ais.some((b) => !b.dead), () => { tLeft -= C.DT; });
+      return tLeft;
     });
   }
 
@@ -500,13 +505,13 @@
 
   // ---------- revive (solo) ----------
   // After a fall the player may come back on the floor they reached: pay coins (pricier the higher
-  // the floor and with every revive this run), spend a revive pass, or watch one ad per run.
+  // the floor; once per run), spend a revive pass, or watch an ad (once per run).
   const REVIVE_T = 8, REVIVE_MIN_FLOOR = 5;
   function reviveOffer() {
     const d = S.Save.data, floor = sim.floor;
     if (G.mode !== 'solo' || floor < REVIVE_MIN_FLOOR) return null;
-    const price = S.revivePrice(floor, G.revives);
-    const o = { floor, price, coinsOk: d.coins >= price, tickets: d.tickets.revive, adOk: !G.adRevived };
+    const price = S.revivePrice(floor);
+    const o = { floor, price, coinUsed: !!G.coinRevived, coinsOk: !G.coinRevived && d.coins >= price, tickets: d.tickets.revive, adOk: !G.adRevived };
     return o.coinsOk || o.tickets || o.adOk ? o : null;
   }
 
@@ -520,13 +525,9 @@
     if (G.state !== 'revive' || G.reviveBusy) return;
     const d = S.Save.data, o = reviveOffer();
     if (!how || !o) return endSoloRun();
-    if (how === 'coins') {
-      if (!o.coinsOk) return;
-      d.coins -= o.price;
-    } else if (how === 'ticket') {
-      if (!o.tickets) return;
-      d.tickets.revive--;
-    } else if (how === 'ad') {
+    if (how === 'coins' && !o.coinsOk) return;
+    if (how === 'ticket' && !o.tickets) return;
+    if (how === 'ad') {
       if (!o.adOk) return;
       G.reviveBusy = true;
       const ok = await S.Ads.rewarded('revive');
@@ -535,9 +536,11 @@
       if (!ok) { ui.toast(t('ad.fail'), 1800); G.revT = Math.max(G.revT, 4); return; }
       G.adRevived = true;
     }
-    S.Save.save();
     ui.overlay('revive', false);
-    if (!sim.revive()) return endSoloRun();
+    if (!sim.revive()) return endSoloRun(); // nothing to stand on: nothing is charged
+    if (how === 'coins') { d.coins -= o.price; G.coinRevived = true; }
+    else if (how === 'ticket') d.tickets.revive--;
+    S.Save.save();
     G.revives++;
     G.state = 'countdown';
     G.countT = 1.5;
@@ -654,14 +657,29 @@
 
   const raceOrder = () => sim.bodies.slice().sort((a, b) => b.floor - a.floor || a.floorT - b.floorT || a.id - b.id);
 
-  function finishRace(reason) {
-    // If the player fell out early, play the rest of the race instantly so every rival gets a result.
+  // Runs simulation steps for at most `budgetMs` of real time; returns true when `done()` holds.
+  // Used to play the rest of a race out quickly without freezing the screen in one long frame.
+  const FF_BUDGET_MS = 6;
+  function fastSteps(done, onStep) {
+    const t0 = performance.now();
     G.ff = true;
-    while (G.raceT > 0 && sim.bodies.some((b) => !b.dead)) {
-      sim.step({ move: 0, jump: false });
-      G.raceT -= C.DT;
+    while (!done() && performance.now() - t0 < FF_BUDGET_MS) {
+      for (let i = 0; i < 30 && !done(); i++) { sim.step(idleInput); onStep(); }
     }
     G.ff = false;
+    return done();
+  }
+
+  function finishRace(reason) {
+    // If the player fell out early, the rest of the race is played out at high speed (a few
+    // milliseconds of each frame, see 'settling' in the loop) so every rival gets a real result.
+    if (G.raceT > 0 && sim.bodies.some((b) => !b.dead)) {
+      G.state = 'settling';
+      G.settleReason = reason;
+      input.enabled = false;
+      input.reset();
+      return;
+    }
     sim.started = false; // freeze lava and rivals behind the results
     const order = raceOrder();
     const rank = order.indexOf(sim.p) + 1;
@@ -819,7 +837,8 @@
     if (G.state === 'play') inp = G.bot ? G.bot.update(sim, C.DT) : input.poll();
 
     const isOnline = online() && sim.online;
-    if (isOnline && sim.started && G.state !== 'over') {
+    // (not while the host is fast-forwarding the AI: that runs ahead of the shared clock on purpose)
+    if (isOnline && sim.started && G.state !== 'over' && net.ffLeft === undefined) {
       // Lava follows the shared clock, so every client sees it at the same height.
       sim.runTime = Math.max(0, onlineElapsed() - Math.floor((acc + simDt) / C.DT) * C.DT);
     }
@@ -844,6 +863,10 @@
     }
 
     if (G.mode === 'race' && G.state === 'play' && G.raceT <= 0) finishRace('time');
+    if (G.state === 'settling') {
+      const over = () => G.raceT <= 0 || !sim.bodies.some((b) => !b.dead);
+      if (fastSteps(over, () => { G.raceT -= C.DT; })) finishRace(G.settleReason);
+    }
     if (G.state === 'dying') {
       G.dyingT -= dt;
       if (G.dyingT <= 0) {
@@ -940,7 +963,7 @@
         else if (open('revive')) G.reviveWith(null);
         else if (open('daily')) ui.overlay('daily', false);
         else if (open('ranking')) ui.overlay('ranking', false);
-        else if (open('elevator')) ui.overlay('elevator', false);
+        else if (open('elevator')) ui.closeElevator();
         else if (open('versus')) ui.overlay('versus', false);
         else if (open('settings')) ui.closeSettings();
         else if (G.state === 'play') G.pause();

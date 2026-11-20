@@ -3,7 +3,7 @@
 // (top 100 best floor, top 100 peak rank points).
 // Players are identified by a random id their device generates (no accounts). Ids never leave
 // the server in leaderboard responses, so nobody can read another player's id and play as them.
-import { sanitizeName, cleanName, nameKey, tierFor, rpDelta, placementRp, TOP_N, MAX_FLOOR, PLACEMENT_GAMES } from './rules.js';
+import { sanitizeName, cleanName, nameKey, tierFor, rpDelta, placementRp, TOP_N, MAX_FLOOR, PLACEMENT_GAMES, HOF_FLOOR, HOF_RP, HOF_MAX } from './rules.js';
 
 const blank = (pid) => ({ pid, name: 'Climber', rp: 0, casualWins: 0, rankedGames: 0, best: 0, peak: 0, nickSet: false, placed: false, placements: [] });
 const validPid = (pid) => typeof pid === 'string' && pid.length >= 8 && pid.length <= 64;
@@ -93,6 +93,12 @@ export class Ledger {
         await this.ctx.storage.put('top:' + type, list);
       }
     }
+    const hof = await this.hallOfFame();
+    const e = hof.find((x) => x.pid === p.pid);
+    if (e && e.name !== p.name) {
+      e.name = p.name;
+      await this.ctx.storage.put('hof', hof);
+    }
   }
 
   // ---- match results ----
@@ -121,6 +127,7 @@ export class Ledger {
         if (p.placed && p.rp > p.peak) {
           p.peak = p.rp;
           await this.board('rp', p, p.peak);
+          await this.fame(p);
         }
       } else if (r.place === 1) {
         p.casualWins++;
@@ -142,9 +149,49 @@ export class Ledger {
     const improved = best > p.best;
     if (improved) p.best = best;
     await this.ctx.storage.put('p:' + p.pid, p);
-    if (improved) await this.board('floor', p, p.best);
+    if (improved) {
+      await this.board('floor', p, p.best);
+      await this.fame(p);
+    }
     if (p.name !== before) await this.renameOnBoards(p);
     return { ok: true, best: p.best, name: p.name };
+  }
+
+  // Hall of fame: in for good once the best solo run reaches HOF_FLOOR or ranked peak reaches
+  // Master. Later records only update the numbers shown next to the name.
+  async fame(p) {
+    const floorIn = p.best >= HOF_FLOOR, masterIn = p.peak >= HOF_RP;
+    if (!floorIn && !masterIn) return;
+    const hof = await this.hallOfFame();
+    let e = hof.find((x) => x.pid === p.pid);
+    if (!e) {
+      if (hof.length >= HOF_MAX) return;
+      e = { pid: p.pid, name: p.name, floor: 0, rp: 0, t: Date.now() };
+      hof.push(e);
+    }
+    e.name = p.name;
+    if (floorIn) e.floor = Math.max(e.floor, p.best);
+    if (masterIn) e.rp = Math.max(e.rp, p.peak);
+    await this.ctx.storage.put('hof', hof);
+  }
+
+  // Seeded once from the leaderboards, so records set before the hall of fame existed count too.
+  async hallOfFame() {
+    let hof = await this.ctx.storage.get('hof');
+    if (Array.isArray(hof)) return hof;
+    hof = [];
+    const byPid = {};
+    for (const [type, min, field] of [['floor', HOF_FLOOR, 'floor'], ['rp', HOF_RP, 'rp']]) {
+      for (const e of (await this.ctx.storage.get('top:' + type)) || []) {
+        if (e.v < min) continue;
+        const h = byPid[e.pid] || (byPid[e.pid] = { pid: e.pid, name: e.name, floor: 0, rp: 0, t: e.t });
+        h[field] = e.v;
+        h.t = Math.min(h.t, e.t);
+      }
+    }
+    hof = Object.values(byPid).sort((a, b) => a.t - b.t).slice(0, HOF_MAX);
+    await this.ctx.storage.put('hof', hof);
+    return hof;
   }
 
   // Insert / update one player on a leaderboard (sorted by value, earlier holder wins ties).
@@ -164,6 +211,17 @@ export class Ledger {
   }
 
   async top(type, pid) {
+    if (type === 'hof') {
+      const hof = await this.hallOfFame();
+      const p = validPid(pid) ? await this.get(pid) : blank('');
+      return {
+        type: 'hof',
+        top: [],
+        need: { floor: HOF_FLOOR, rp: HOF_RP },
+        hof: hof.map((e) => ({ name: e.name, floor: e.floor, rp: e.rp, t: e.t, me: e.pid === pid })),
+        me: { best: p.best, peak: p.peak, in: hof.some((e) => e.pid === pid) },
+      };
+    }
     const t = type === 'rp' ? 'rp' : 'floor';
     const list = (await this.ctx.storage.get('top:' + t)) || [];
     const p = validPid(pid) ? await this.get(pid) : blank('');

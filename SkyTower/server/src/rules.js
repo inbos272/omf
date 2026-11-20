@@ -21,6 +21,12 @@ export const TIERS = [
   { id: 'platinum', rp: 1200 }, { id: 'diamond', rp: 1800 }, { id: 'master', rp: 2500 },
 ];
 
+// Hall of fame: every player who has climbed HOF_FLOOR floors in one solo run, or reached Master
+// in ranked play, is listed there for good (in the order they got in).
+export const HOF_FLOOR = 3000;
+export const HOF_RP = TIERS.find((t) => t.id === 'master').rp;
+export const HOF_MAX = 500; // entries kept (one storage value)
+
 export function tierFor(rp) {
   let t = TIERS[0];
   for (const x of TIERS) if (rp >= x.rp) t = x;

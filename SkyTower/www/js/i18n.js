@@ -238,6 +238,13 @@
   a('rank.unranked', '순위 없음', 'Unranked', '圏外', '未上榜', 'Sin puesto');
   a('rank.empty', '아직 기록이 없어요', 'No records yet', 'まだ記録がありません', '暂无记录', 'Aún no hay récords');
   a('rank.loading', '불러오는 중…', 'Loading…', '読み込み中…', '加载中…', 'Cargando…');
+  a('rank.hof', '명예의 전당', 'Hall of Fame', '殿堂', '名人堂', 'Salón de la fama');
+  a('hof.sub', '한 판에 {f}층 이상 오르거나 랭크전 마스터에 오른 플레이어의 이름이 영원히 남아요.', 'Climb {f}+ floors in one run or reach Master in ranked, and your name stays here forever.', '1回で{f}階以上登るか、ランク戦でマスターになると名前が永遠に残ります。', '单局攀登{f}层以上或在排位赛达到大师，名字将永久留存。', 'Sube {f}+ pisos en una partida o llega a Maestro en clasificatoria y tu nombre quedará aquí.');
+  a('hof.empty', '아직 명예의 전당에 오른 플레이어가 없어요. 첫 주인공이 되어 보세요!', 'No one has made it yet. Be the first!', 'まだ誰も殿堂入りしていません。最初の一人になろう！', '还没有人入选名人堂。成为第一人吧！', 'Nadie lo ha logrado aún. ¡Sé el primero!');
+  a('hof.floorBadge', '🏔️ {v}층', '🏔️ {v}F', '🏔️ {v}階', '🏔️ {v}层', '🏔️ {v} pisos');
+  a('hof.masterBadge', '👑 마스터 {v} RP', '👑 Master {v} RP', '👑 マスター {v} RP', '👑 大师 {v} RP', '👑 Maestro {v} RP');
+  a('hof.mine', '내 기록 · 최고 {f}층 / {need}층 · 최고 {rp} RP / {needRp} RP', 'You · best {f} / {need} floors · peak {rp} / {needRp} RP', '自分・最高{f}/{need}階・最高{rp}/{needRp} RP', '我 · 最高{f}/{need}层 · 最高{rp}/{needRp} RP', 'Tú · mejor {f}/{need} pisos · máx. {rp}/{needRp} RP');
+  a('hof.in', '🎉 명예의 전당에 올랐어요!', '🎉 You are in the Hall of Fame!', '🎉 殿堂入りしました！', '🎉 你已入选名人堂！', '🎉 ¡Estás en el Salón de la fama!');
 
   // ---- ads ----
   a('ad.triple', '광고 보고 코인 3배', 'Watch an ad: 3× coins', '広告を見てコイン3倍', '看广告金币×3', 'Mira un anuncio: monedas ×3');

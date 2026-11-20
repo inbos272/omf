@@ -395,6 +395,32 @@ async function nicknames() {
   return r.join() === want && old === 'outdated' && bAfter === 'Sky Ace' && shown === 'Sky Ace';
 }
 
+// Hall of fame: in at 3000 floors (one solo run) or Master (2500 RP); records set before the hall
+// existed are picked up from the leaderboards; renames follow; numbers only grow.
+async function hallOfFame() {
+  const env = makeEnv();
+  const net = new S.Net({ baseUrl: 'https://fake', fetchFn: (u, o) => worker.fetch(new Request(u, o), env) });
+  const ledger = env.LEDGER.get(env.LEDGER.idFromName('global')).o;
+  const pid = (n) => 'pid-' + n + '-0000';
+  // A record from before the hall of fame existed.
+  await ledger.ctx.storage.put('top:floor', [{ pid: pid('old'), name: 'Veteran', v: 3500, t: 1 }]);
+  await net.submitScore(pid('near'), 'Nearly', 2999);
+  await net.submitScore(pid('ace'), 'Ace', 3001);
+  await net.submitScore(pid('ace'), 'Ace', 3400); // better run: same entry, bigger number
+  const m = await ledger.get(pid('mst'));
+  Object.assign(m, { name: 'Maestro', nickSet: true, placed: true, rp: 2480, casualWins: 9 });
+  await ledger.ctx.storage.put('p:' + m.pid, m);
+  await ledger.apply({ mode: 'ranked', players: [{ pid: m.pid, name: 'Maestro', place: 1 }] }); // 2480 → 2520
+  await net.claimNick(pid('ace'), 'AceHigh');
+  const res = await net.top('hof', pid('ace'));
+  const rows = res.hof.map((h) => `${h.name}:${h.floor || '-'}/${h.rp || '-'}${h.me ? '*' : ''}`).join(' ');
+  const out = await net.top('hof', pid('near'));
+  const old = await new S.Net({ baseUrl: 'https://x', fetchFn: async () => new Response(JSON.stringify({ type: 'floor', top: [], me: {} })) }).top('hof', pid('ace'));
+  log(`HALL OF FAME: ${rows} | need ${res.need.floor}F / ${res.need.rp} RP | 2999F player in=${out.me.in} (best ${out.me.best}) | ranking-only server → ${old}`);
+  return rows === 'Veteran:3500/- AceHigh:3400/-* Maestro:-/2520' && res.need.floor === 3000 && res.need.rp === 2500
+    && out.me.in === false && out.me.best === 2999 && res.me.in === true && old === 'outdated';
+}
+
 // Ranked placement: five games with no RP change, then a first tier from Bronze to Gold.
 async function placement() {
   const env = makeEnv();
@@ -488,6 +514,7 @@ async function versionCheck() {
     pass = (await leaderboard()) && pass;
     pass = (await nicknames()) && pass;
     pass = (await placement()) && pass;
+    pass = (await hallOfFame()) && pass;
     pass = netSmooth() && pass;
     pass = (await refreshAfterFall()) && pass;
     pass = (await casualMatch()) && pass;

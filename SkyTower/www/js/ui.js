@@ -49,7 +49,7 @@
       $('vsRanked').onclick = () => G.startOnline('ranked');
       $('btnMtCancel').onclick = () => G.cancelOnline();
       $('btnElev').onclick = () => this.openElevator();
-      $('btnElevClose').onclick = () => this.overlay('elevator', false);
+      $('btnElevClose').onclick = () => this.closeElevator();
       $('btnNickSave').onclick = () => this.submitNick($('sNick'), $('sNickMsg'), $('btnNickSave'), false);
       $('btnNpOk').onclick = () => this.submitNick($('npInput'), $('npMsg'), $('btnNpOk'), true);
       $('npInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btnNpOk').click(); });
@@ -289,11 +289,15 @@
       for (const b of $('rankTabs').children) b.classList.toggle('on', b.dataset.type === type);
       $('rankList').textContent = '';
       $('rankMe').textContent = '';
+      $('rankMe').className = 'rank-me';
       $('rankStatus').textContent = t('rank.loading');
       this.overlay('ranking', true);
+      $('hofSub').classList.toggle('hidden', type !== 'hof');
+      $('hofSub').textContent = t('hof.sub', { f: (3000).toLocaleString() });
       const res = await this.G.loadRanking(type);
       if (this.rankType !== type || $('ranking').classList.contains('hidden')) return;
       if (res.error) { $('rankStatus').textContent = res.error; return; }
+      if (type === 'hof') { this._renderHof(res); return; }
       const d = S.Save.data, list = $('rankList');
       const score = (e) => (type === 'floor' ? S.fl(e.v) : t('tier.' + S.tierFor(e.v).id) + ' · ' + e.v);
       const row = (el, rank, e) => {
@@ -318,12 +322,53 @@
       if (res.me && res.me.v > 0) row($('rankMe'), res.me.rank || t('rank.unranked'), { name: d.nick, v: res.me.v });
     }
 
+    // Hall of fame: everyone who climbed 3000+ floors in a run or reached Master, in order of entry.
+    _renderHof(res) {
+      const list = $('rankList'), need = res.need || { floor: 3000, rp: 2500 };
+      $('hofSub').textContent = t('hof.sub', { f: need.floor.toLocaleString() });
+      const date = (ms) => {
+        try { return new Date(ms).toLocaleDateString(document.documentElement.lang, { year: 'numeric', month: 'short', day: 'numeric' }); }
+        catch (e) { return new Date(ms).toISOString().slice(0, 10); }
+      };
+      res.hof.forEach((h) => {
+        const li = document.createElement('li');
+        li.className = 'hof' + (h.me ? ' me' : '');
+        const icon = document.createElement('span');
+        icon.className = 'r';
+        icon.textContent = h.rp ? '👑' : '🏔️';
+        const text = document.createElement('span');
+        text.className = 'n';
+        const name = document.createElement('b');
+        name.textContent = h.name;
+        const badges = document.createElement('small');
+        const parts = [];
+        if (h.floor) parts.push(t('hof.floorBadge', { v: h.floor.toLocaleString() }));
+        if (h.rp) parts.push(t('hof.masterBadge', { v: h.rp.toLocaleString() }));
+        badges.textContent = parts.join(' · ');
+        text.append(name, badges);
+        const when = document.createElement('em');
+        when.textContent = h.t ? date(h.t) : '';
+        li.append(icon, text, when);
+        list.appendChild(li);
+      });
+      $('rankStatus').textContent = res.hof.length ? '' : t('hof.empty');
+      const me = res.me || {};
+      const mine = $('rankMe');
+      const n = document.createElement('span');
+      n.className = 'n';
+      n.textContent = me.in ? t('hof.in')
+        : t('hof.mine', { f: (me.best || 0).toLocaleString(), need: need.floor.toLocaleString(), rp: (me.peak || 0).toLocaleString(), needRp: need.rp.toLocaleString() });
+      mine.className = 'rank-me hof-me';
+      mine.appendChild(n);
+    }
+
     // ---- revive offer ----
     revive(o) {
       $('revFloor').textContent = o.floor;
       $('revSub').textContent = t('rev.sub', { f: o.floor });
       $('revPrice').textContent = o.price.toLocaleString();
       $('btnRevCoins').disabled = !o.coinsOk;
+      $('btnRevCoins').classList.toggle('hidden', o.coinUsed); // one coin revive per run
       $('btnRevTicket').classList.toggle('hidden', !o.tickets);
       $('revTicket').textContent = t('rev.ticket', { n: o.tickets });
       $('btnRevAd').classList.toggle('hidden', !o.adOk);
@@ -386,7 +431,7 @@
         b.innerHTML = '<b></b><span></span>';
         b.firstChild.textContent = text;
         b.lastChild.textContent = icon;
-        b.onclick = () => { this.overlay('elevator', false); fn(); };
+        b.onclick = () => { this.closeElevator(); fn(); };
         list.appendChild(b);
       };
       if (d.tickets.elev30 > 0) special('ticket', '🎟️', t('elev.ticket', { n: d.tickets.elev30 }), () => this.G.elevator(30, 'ticket'));
@@ -398,11 +443,19 @@
         b.innerHTML = '<b></b><span><i class="coin"></i> <em></em></span>';
         b.firstChild.textContent = S.fl(e.floor);
         b.querySelector('em').textContent = e.price.toLocaleString();
-        b.onclick = () => { this.overlay('elevator', false); this.G.elevator(e.floor); };
+        b.onclick = () => { this.closeElevator(); this.G.elevator(e.floor); };
         list.appendChild(b);
       }
       $('elevCoins').textContent = d.coins.toLocaleString();
+      // Hold the character still while choosing: moving would start the run and close the lift.
+      this.G.input.enabled = false;
+      this.G.input.reset();
       this.overlay('elevator', true);
+    }
+
+    closeElevator() {
+      this.overlay('elevator', false);
+      if (this.G.state === 'play') this.G.input.enabled = true;
     }
 
     spectate(name) {
@@ -633,7 +686,7 @@
         medal.textContent = MEDAL[i];
         const img = document.createElement('img');
         img.alt = '';
-        img.src = this._thumb('skin', b.skin);
+        this._thumbInto(img, 'skin', b.skin);
         const nm = document.createElement('span');
         nm.className = 'nm';
         nm.textContent = this.nameOf(b) + (b.ab ? ' ' + S.abIcon(b.ab) : '') + (b.dc ? ' ⚡' : '');
@@ -730,6 +783,28 @@
       this.renderColl();
     }
 
+    // Thumbnails are 3D renders read back from the GPU; drawing 30 at once froze the shop for a
+    // moment on phones. Cached ones appear at once, the rest a few per frame.
+    _thumbInto(img, kind, item) {
+      const key = kind + ':' + item.id;
+      if (this.thumbs[key]) { img.src = this.thumbs[key]; return; }
+      img.classList.add('pending');
+      (this.thumbQ || (this.thumbQ = [])).push({ img, kind, item });
+      if (!this.thumbRaf) this.thumbRaf = requestAnimationFrame(() => this._drainThumbs());
+    }
+
+    _drainThumbs() {
+      this.thumbRaf = 0;
+      const t0 = performance.now();
+      while (this.thumbQ.length && performance.now() - t0 < 6) {
+        const job = this.thumbQ.shift();
+        if (!job.img.isConnected) continue; // that list was redrawn meanwhile
+        job.img.src = this._thumb(job.kind, job.item);
+        job.img.classList.remove('pending');
+      }
+      if (this.thumbQ.length) this.thumbRaf = requestAnimationFrame(() => this._drainThumbs());
+    }
+
     _thumb(kind, item) {
       const key = kind + ':' + item.id;
       if (!this.thumbs[key]) this.thumbs[key] = kind === 'skin' ? this.G.scene.thumbnailSkin(item) : this.G.scene.thumbnailTheme(item);
@@ -780,7 +855,7 @@
         name.textContent = S.nameOf(kind, it);
         const img = document.createElement('img');
         img.alt = '';
-        img.src = this._thumb(kind, it);
+        this._thumbInto(img, kind, it);
         b.append(img, name);
         if (kind === 'skin' && it.ab) {
           const icon = document.createElement('span');

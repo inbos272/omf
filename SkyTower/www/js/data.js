@@ -256,7 +256,8 @@
   S.PLACEMENT_GAMES = 5; // ranked placement matches before the first tier (server/src/rules.js)
 
   // Revive where you fell: higher floors cost more, and each further revive in a run doubles it.
-  S.revivePrice = (floor, used) => Math.round(((200 + floor * 25) * Math.pow(2, used)) / 50) * 50;
+  // Coin revive (once per run): higher floors cost more.
+  S.revivePrice = (floor) => Math.round((200 + floor * 25) / 50) * 50;
 
   // Daily login rewards, one per day; missing a day restarts at day 1.
   S.DAILY = [

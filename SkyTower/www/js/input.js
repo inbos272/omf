@@ -20,6 +20,7 @@
       this.enabled = false;
       this.btnPtrs = new Map();
       this.seq = 0;
+      this.splitX = 0;
       this._bind();
     }
 
@@ -50,9 +51,14 @@
 
     // The whole move half of the screen is touchable; the split sits halfway between the two
     // buttons, so a thumb can slide from one to the other without lifting.
-    _dirAt(x) {
+    // Measured once per press: reading layout on every pointermove would force the browser to
+    // re-layout the (constantly changing) HUD dozens of times a second.
+    _measureSplit() {
       const a = this.els.left.getBoundingClientRect(), b = this.els.right.getBoundingClientRect();
-      return x < (a.right + b.left) / 2 ? -1 : 1;
+      this.splitX = (a.right + b.left) / 2;
+    }
+    _dirAt(x) {
+      return x < this.splitX ? -1 : 1;
     }
 
     _updateButtons() {
@@ -75,6 +81,7 @@
         if (!this.oneHand) {
           e.preventDefault();
           try { move.setPointerCapture(e.pointerId); } catch (err) { /* pointer already gone */ }
+          if (!this.btnPtrs.size) this._measureSplit();
           this.btnPtrs.set(e.pointerId, { dir: this._dirAt(e.clientX), seq: ++this.seq });
           this._updateButtons();
           return;

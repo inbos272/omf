@@ -338,7 +338,7 @@ o=vec4(c,1.);}`;
   }
 
   const MESH = (S.MESH = { SPHERE: 0, RBOX: 1, CYL: 2, CONE: 3, TORUS: 4, COIN: 5, GEM: 6 });
-  const INST_F = 20, INST_MAX = 640, PLAT_F = 8, PLAT_MAX = 160;
+  const INST_F = 20, INST_MAX = 640, PLAT_F = 8, PLAT_MAX = 160, PART_MAX = 1024;
 
   S.QUALITY = {
     low: { dpr: 1, msaa: 0, distort: 0, part: 0.45, shadow: false },
@@ -396,7 +396,10 @@ o=vec4(c,1.);}`;
       this.platVao = this._instVao(this.slab, this.platBuf, [[3, 4, 32, 0], [4, 4, 32, 16]]);
       this.shadowVao = this._instVao(this.strip, this.platBuf, [[3, 4, 32, 0], [4, 4, 32, 16]]);
 
+      // Allocated once; each frame only the live particles are copied in (no GPU reallocation).
       this.partBuf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.partBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, PART_MAX * 8 * 4, gl.DYNAMIC_DRAW);
       this.partVao = this._instVao(this.quad, this.partBuf, [[3, 4, 32, 0], [4, 4, 32, 16]]);
       this.partN = 0;
       this.partData = null;
@@ -623,7 +626,7 @@ o=vec4(c,1.);}`;
 
     setParticles(data, n) {
       this.partData = data;
-      this.partN = n;
+      this.partN = Math.min(n, PART_MAX);
     }
 
     computeView(v) {
@@ -641,12 +644,11 @@ o=vec4(c,1.);}`;
       const tx = -(r[0] * v.eye[0] + r[1] * v.eye[1] + r[2] * v.eye[2]);
       const ty = -(u[0] * v.eye[0] + u[1] * v.eye[1] + u[2] * v.eye[2]);
       const tz = f[0] * v.eye[0] + f[1] * v.eye[1] + f[2] * v.eye[2];
-      v.vp = new Float32Array([
-        px * r[0], py * u[0], A * -f[0], f[0],
-        px * r[1], py * u[1], A * -f[1], f[1],
-        px * r[2], py * u[2], A * -f[2], f[2],
-        px * tx, py * ty, A * tz + B, -tz,
-      ]);
+      const vp = v.vp instanceof Float32Array ? v.vp : (v.vp = new Float32Array(16)); // reused every frame
+      vp[0] = px * r[0]; vp[1] = py * u[0]; vp[2] = A * -f[0]; vp[3] = f[0];
+      vp[4] = px * r[1]; vp[5] = py * u[1]; vp[6] = A * -f[1]; vp[7] = f[1];
+      vp[8] = px * r[2]; vp[9] = py * u[2]; vp[10] = A * -f[2]; vp[11] = f[2];
+      vp[12] = px * tx; vp[13] = py * ty; vp[14] = A * tz + B; vp[15] = -tz;
       v.r = r; v.u = u; v.f = f;
       return v;
     }
@@ -787,7 +789,7 @@ o=vec4(c,1.);}`;
 
       if (this.partN) {
         gl.bindBuffer(gl.ARRAY_BUFFER, this.partBuf);
-        gl.bufferData(gl.ARRAY_BUFFER, this.partData, gl.DYNAMIC_DRAW, 0, this.partN * 8);
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.partData, 0, this.partN * 8);
         const pr = P.part;
         gl.useProgram(pr.p);
         gl.uniformMatrix4fv(pr.u.uVP, false, v.vp);

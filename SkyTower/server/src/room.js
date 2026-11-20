@@ -89,6 +89,9 @@ export class Room {
   }
 
   async webSocketMessage(ws, data) {
+    // Real messages are a few hundred bytes; anything far bigger is dropped instead of being
+    // relayed to every other player (it would only cost them bandwidth and frames).
+    if (typeof data !== 'string' || data.length > 4096) return;
     const a = ws.deserializeAttachment();
     const m = await this.meta();
     if (!a || !m || m.ended) return;
@@ -181,10 +184,16 @@ export class Room {
     });
     let profiles = {};
     if (humans.length && !m.void) {
-      const stub = this.env.LEDGER.get(this.env.LEDGER.idFromName('global'));
-      const res = await stub.fetch('https://ledger/apply', { method: 'POST', body: JSON.stringify({ mode: m.mode, players: humans }) });
-      const byPid = await res.json();
-      for (const h of humans) profiles[h.slot] = byPid[h.pid];
+      // If the ledger can't be reached the race still ends for everyone (standings shown, no
+      // rank change) rather than leaving the players waiting for an end that never comes.
+      try {
+        const stub = this.env.LEDGER.get(this.env.LEDGER.idFromName('global'));
+        const res = await stub.fetch('https://ledger/apply', { method: 'POST', body: JSON.stringify({ mode: m.mode, players: humans }) });
+        const byPid = await res.json();
+        for (const h of humans) if (byPid[h.pid]) profiles[h.slot] = byPid[h.pid];
+      } catch (e) {
+        profiles = {};
+      }
     }
     await this.save();
     const pub = {};

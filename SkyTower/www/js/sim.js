@@ -115,6 +115,7 @@
       opts = opts || {};
       while (this.plats.length) this.platPool.push(this.plats.pop());
       while (this.coins.length) this.coinPool.push(this.coins.pop());
+      this.golden = new Map(); // floor → main platform (bots and the camera ask for it a lot)
       this.rng = mulberry(seed);
       this.seed = seed;
       this.bestFloor = bestFloor || 0;
@@ -139,6 +140,7 @@
 
       const x0 = this.rng() * C.CIRC;
       const first = this._plat(x0, 0, this.race ? 5.4 : this._r(3.8, 5), T.NORMAL, 0, false);
+      this.golden.set(0, first);
       this.last = first;
 
       this.bodies.length = 0;
@@ -316,6 +318,7 @@
       const x = a.x + this.dir * offset;
       const y = a.y + dy;
       const b = this._plat(x, y, hw, type, f, false);
+      this.golden.set(f, b);
       b.beacon = !!special;
       if (f === this.bestFloor) this.bestY = y;
 
@@ -357,8 +360,7 @@
     }
 
     findGolden(floor) {
-      for (const q of this.plats) if (q.floor === floor && !q.side) return q;
-      return null;
+      return this.golden.get(floor) || null;
     }
 
     // Revive (solo): back on the golden platform of the floor reached, lava pushed well below.
@@ -505,6 +507,7 @@
         if (q.spawn < 1) q.spawn = Math.min(1, q.spawn + dt * 3.2);
         if (q.y < this.lavaY - 9 && q !== this.last) {
           for (const b of this.bodies) if (b.ground === q) { b.ground = null; b.grounded = false; }
+          if (!q.side && this.golden.get(q.floor) === q) this.golden.delete(q.floor);
           this.platPool.push(q);
           this.plats[i] = this.plats[this.plats.length - 1];
           this.plats.pop();
@@ -715,7 +718,8 @@
       this.time += dt;
       for (const b of this.bodies) {
         if (b.dead || b.remote) continue;
-        const bi = b.human ? inp : this.started ? b.bot.update(this, dt, b) : IDLE;
+        // (an AI whose controller is momentarily missing — e.g. mid host handoff — just idles)
+        const bi = b.human ? inp : this.started && b.bot ? b.bot.update(this, dt, b) : IDLE;
         this._stepBody(b, bi);
       }
       if (this.bodies.length > 1) this._collide();

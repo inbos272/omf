@@ -90,10 +90,22 @@ export class Matchmaker {
     // through it, so this sets the race's round-trip time.
     const locationHint = majorityRegion(group.players.map((p) => p.region));
     const stub = locationHint ? this.env.ROOM.get(id, { locationHint }) : this.env.ROOM.get(id);
-    await stub.fetch('https://room/init', {
-      method: 'POST',
-      body: JSON.stringify({ mode, seed, players, ai: group.ai, avgRp }),
-    });
+    try {
+      const res = await stub.fetch('https://room/init', {
+        method: 'POST',
+        body: JSON.stringify({ mode, seed, players, ai: group.ai, avgRp }),
+      });
+      if (!res.ok) throw new Error('room init ' + res.status);
+    } catch (e) {
+      // Could not open a room: tell these players (their game shows "matching failed") instead of
+      // leaving them waiting forever or retrying the same group in a loop.
+      for (const p of group.players) {
+        p.ws.serializeAttachment(null);
+        send(p.ws, { t: 'error', code: 'room' });
+        p.ws.close(1011, 'room unavailable');
+      }
+      return;
+    }
     group.players.forEach((p, i) => {
       p.ws.serializeAttachment(null); // no longer queued
       send(p.ws, { t: 'match', room: id.toString(), token: players[i].token });
@@ -102,6 +114,7 @@ export class Matchmaker {
   }
 
   async webSocketMessage(ws, data) {
+    if (typeof data !== 'string' || data.length > 512) return;
     let msg = null;
     try { msg = JSON.parse(data); } catch (e) { return; }
     if (msg && msg.t === 'cancel') {

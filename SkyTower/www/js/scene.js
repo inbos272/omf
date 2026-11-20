@@ -16,6 +16,14 @@
   S.MILESTONES.forEach((m) => (MILE[m.floor] = 1));
   S.ENVS.forEach((e) => { if (e.from) MILE[e.from] = 1; });
 
+  const AMB_RATE = { wisp: 2.5, sand: 26, snow: 30, ember: 24, dust: 14, ash: 34, feather: 12 };
+  // Colours used for every character every frame: shared, not re-allocated.
+  const EYE = [0.11, 0.13, 0.2], WHITE = [1, 1, 1], PINK = [1, 0.5, 0.5], GREY = [0.3, 0.33, 0.4];
+  const tone = (skin) => skin._tone || (skin._tone = {
+    dark: [skin.body[0] * 0.72, skin.body[1] * 0.72, skin.body[2] * 0.72],
+    light: skin.accCol ? [Math.min(1, skin.accCol[0] * 1.3), Math.min(1, skin.accCol[1] * 1.3), Math.min(1, skin.accCol[2] * 1.3)] : WHITE,
+  });
+
   const TYPE_COL = [
     [0.95, 0.92, 0.82], [0.7, 0.93, 1], [0.5, 1, 0.45], [0.8, 0.65, 0.45], [0.45, 0.8, 1], [1, 0.45, 0.2],
   ];
@@ -456,7 +464,7 @@
       else if (shape === 'blob') { rx = 0.7; ry = 0.5; rz = 0.66; cy = 0.54; }
       const top = cy + ry;
       const bc = skin.body, em = skin.em || 0, gl = skin.gloss ? 0.9 : 0.16;
-      const dark = [bc[0] * 0.72, bc[1] * 0.72, bc[2] * 0.72];
+      const dark = tone(skin).dark;
       const bob = st.grounded ? Math.abs(Math.sin(st.phase)) * 0.06 * st.runAmt : 0;
 
       this._part(mesh, 0, cy + bob, 0, rx, ry, rz, bc, em, gl);
@@ -482,24 +490,22 @@
         this._part(M.RBOX, 0, ey, ez - 0.02, rx * 0.8, 0.15, 0.09, v, 0.95, 0.8);
       } else {
         const blink = st.blinkT > 0 ? 0.14 : 1;
-        const eye = [0.11, 0.13, 0.2];
-        this._part(M.SPHERE, -ex, ey, ez, 0.095, 0.135 * blink, 0.06, eye, 0, 0.5);
-        this._part(M.SPHERE, ex, ey, ez, 0.095, 0.135 * blink, 0.06, eye, 0, 0.5);
+        this._part(M.SPHERE, -ex, ey, ez, 0.095, 0.135 * blink, 0.06, EYE, 0, 0.5);
+        this._part(M.SPHERE, ex, ey, ez, 0.095, 0.135 * blink, 0.06, EYE, 0, 0.5);
         if (blink === 1) {
-          const w = [1, 1, 1];
-          this._part(M.SPHERE, -ex + 0.03, ey + 0.05, ez + 0.05, 0.03, 0.04, 0.02, w, 1);
-          this._part(M.SPHERE, ex + 0.03, ey + 0.05, ez + 0.05, 0.03, 0.04, 0.02, w, 1);
+          this._part(M.SPHERE, -ex + 0.03, ey + 0.05, ez + 0.05, 0.03, 0.04, 0.02, WHITE, 1);
+          this._part(M.SPHERE, ex + 0.03, ey + 0.05, ez + 0.05, 0.03, 0.04, 0.02, WHITE, 1);
         }
-        const pink = [1, 0.5, 0.5];
-        this._part(M.SPHERE, -ex - 0.1, ey - 0.15, ez - 0.05, 0.09, 0.055, 0.03, pink, 0.1);
-        this._part(M.SPHERE, ex + 0.1, ey - 0.15, ez - 0.05, 0.09, 0.055, 0.03, pink, 0.1);
+        this._part(M.SPHERE, -ex - 0.1, ey - 0.15, ez - 0.05, 0.09, 0.055, 0.03, PINK, 0.1);
+        this._part(M.SPHERE, ex + 0.1, ey - 0.15, ez - 0.05, 0.09, 0.055, 0.03, PINK, 0.1);
       }
       this._accessory(skin, top + bob, rx, rz, cy + bob, ey);
     }
 
     _accessory(skin, top, rx, rz, cy, ey) {
       const c = skin.accCol, t = this.time;
-      const lighter = [Math.min(1, c[0] * 1.3), Math.min(1, c[1] * 1.3), Math.min(1, c[2] * 1.3)];
+      if (!c) return;
+      const lighter = tone(skin).light;
       switch (skin.acc) {
         case 'cap':
           this._part(M.CYL, 0, top - 0.03, 0, rx * 0.72, 0.2, rx * 0.72, c);
@@ -512,7 +518,7 @@
           this._part(M.SPHERE, 0, top + 0.02, 0.15, 0.07, 0.07, 0.07, lighter);
           break;
         case 'antenna':
-          this._part(M.CYL, 0, top + 0.17, 0, 0.03, 0.38, 0.03, [0.3, 0.33, 0.4]);
+          this._part(M.CYL, 0, top + 0.17, 0, 0.03, 0.38, 0.03, GREY);
           this._part(M.SPHERE, 0, top + 0.4, 0, 0.11, 0.11, 0.11, c, 0.8);
           break;
         case 'antenna2':
@@ -845,8 +851,7 @@
         r.plat(th, q.hw, y - oy, q.type, Math.max(0.001, scale), tilt, flash, q.seed);
 
         if (q.state === 2 || dTh > 1.8) continue;
-        const [wx, , wz] = this.wp(q.x, 0, 0);
-        const yaw = q.x / R;
+        const yaw = q.x / R, wx = Math.sin(yaw) * R, wz = Math.cos(yaw) * R;
         if (q.type === T.JUMP) {
           const hop = Math.abs(Math.sin(time * 4 + q.seed * 6)) * 0.22;
           const k = tl < 0.3 ? 1 + (0.3 - tl) * 3 : 1;
@@ -999,7 +1004,7 @@
       if (dt <= 0) return;
       const fx = this.fx, cam = this.cam, sim = this.sim;
       const env = S.ENVS[this.env].amb;
-      const rate = { wisp: 2.5, sand: 26, snow: 30, ember: 24, dust: 14, ash: 34, feather: 12 }[env] * this.quality;
+      const rate = (AMB_RATE[env] || 10) * this.quality;
       this.ambT += dt * rate;
       while (this.ambT > 1) {
         this.ambT -= 1;

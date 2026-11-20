@@ -43,6 +43,7 @@
       this.latN = 0;
       this.sendT = 0;
       this.lastG = null;
+      this.ffLeft = undefined;
       this.h = null;
       this.leftSlots = new Set();
     }
@@ -130,7 +131,9 @@
         if (r.status === 404) return 'outdated';
         if (!r.ok) return null;
         const j = await r.json().catch(() => null);
-        return j && Array.isArray(j.top) ? j : 'outdated'; // a server without rankings answers with plain text
+        if (!j || !Array.isArray(j.top)) return 'outdated'; // a server without rankings answers with plain text
+        if (type === 'hof' && !Array.isArray(j.hof)) return 'outdated'; // rankings but no hall of fame yet
+        return j;
       } catch (e) {
         return null;
       }
@@ -397,7 +400,16 @@
       const humansOut = sim.bodies.filter((b) => !isAi(b)).every((b) => b.dead);
       let over = raceLeft <= 0;
       if (humansOut && ais.some((b) => !b.dead) && !over) {
-        fastForward(ais, raceLeft);
+        // fastForward may work in slices across frames: it returns the race time still left.
+        if (this.ffLeft === undefined) this.ffLeft = raceLeft;
+        const left = fastForward(ais, this.ffLeft);
+        this.ffLeft = typeof left === 'number' ? left : 0;
+        if (this.ffLeft > 0 && ais.some((b) => !b.dead)) {
+          const fallen = ais.filter((b) => b.dead && !b.reported);
+          for (const b of fallen) b.reported = true;
+          this.sendAiResults(fallen);
+          return;
+        }
         over = true;
       }
       const fresh = ais.filter((b) => (b.dead || over) && !b.reported);

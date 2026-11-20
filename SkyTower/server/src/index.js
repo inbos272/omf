@@ -32,7 +32,7 @@ export default {
       return new Response(res.body, { status: res.status, headers: { ...CORS, 'Content-Type': 'application/json' } });
     }
     if (url.pathname === '/top') {
-      const q = new URLSearchParams({ type: url.searchParams.get('type') || 'floor', pid: url.searchParams.get('pid') || '' });
+      const q = new URLSearchParams({ type: url.searchParams.get('type') || 'floor', pid: (url.searchParams.get('pid') || '').slice(0, 64) });
       const stub = env.LEDGER.get(env.LEDGER.idFromName('global'));
       const res = await stub.fetch('https://ledger/top?' + q.toString());
       return new Response(res.body, { headers: { ...CORS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });

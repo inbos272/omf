@@ -210,10 +210,10 @@ function reviveAndWorlds() {
   };
   const runs = [11, 23, 37, 41, 59].map(trial);
   const good = runs.filter((r) => r.wasDead && r.ok && r.onGolden && r.alive && r.floorAfter >= r.reached - 1 && r.gap > 10).length;
-  const price = [S.revivePrice(10, 0), S.revivePrice(40, 0), S.revivePrice(40, 1), S.revivePrice(200, 2)];
+  const price = [S.revivePrice(10), S.revivePrice(40), S.revivePrice(100), S.revivePrice(200)];
   const worlds = [S.envFor(399), S.envFor(400), S.envFor(499), S.envFor(500), S.envFor(900)];
   log(`REVIVE: ${good}/${runs.length} revived on their floor and survived 2s (floors ${runs.map((r) => r.reached + '→' + r.floorAfter).join(', ')}) | prices ${price.join('/')} | worlds 399/400/499/500/900F → ${worlds.join('/')} (${S.ENVS.map((e) => e.id).join(',')})`);
-  return good === runs.length && price[0] === 450 && price[1] === 1200 && price[2] === 2400 && price[3] === 20800
+  return good === runs.length && price[0] === 450 && price[1] === 1200 && price[2] === 2700 && price[3] === 5200
     && worlds.join() === '4,5,5,6,6' && S.ENVS[5].id === 'hell' && S.ENVS[6].id === 'heaven';
 }
 
