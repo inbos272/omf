@@ -307,6 +307,12 @@
         const n = document.createElement('span');
         n.className = 'n';
         n.textContent = e.name;
+        if (rank === 1) {
+          const crown = document.createElement('span');
+          crown.className = 'crown';
+          crown.textContent = ' 👑';
+          n.appendChild(crown);
+        }
         const b = document.createElement('b');
         b.textContent = score(e);
         if (type === 'rp') b.style.color = S.tierFor(e.v).col;
@@ -500,6 +506,16 @@
       }
     }
 
+    // World's End: the ability badge goes dark.
+    abilityOff() {
+      const el = $('hAbility');
+      el.textContent = '🚫';
+      el.title = t('nopower.title');
+      el.classList.remove('hidden');
+      this.lastHud.ab = 'off';
+      this.abilityId = 'off';
+    }
+
     hud(floor, coins, shields) {
       const L = this.lastHud;
       if (L.floor !== floor) {
@@ -529,7 +545,7 @@
       }
       const ab = this.abilityId;
       const key = ab + ':' + shields;
-      if (L.ab !== key) {
+      if (L.ab !== key && ab !== 'off') {
         L.ab = key;
         const el = $('hAbility');
         el.textContent = ab ? S.abIcon(ab) + (S.ABILITIES[ab].perk.shields ? ' ×' + shields : '') : '';
@@ -612,9 +628,12 @@
         name.textContent = this.nameOf(b);
         const fl = document.createElement('b');
         fl.textContent = '0';
-        row.append(dot, name, fl);
+        const crown = document.createElement('span');
+        crown.className = 'crown hidden';
+        crown.textContent = '👑';
+        row.append(dot, name, crown, fl);
         board.appendChild(row);
-        this.race.rows[b.id] = { row, fl, last: -1, rank: -1, dead: false };
+        this.race.rows[b.id] = { row, fl, crown, last: -1, rank: -1, dead: false };
         if (!b.human) {
           const tag = document.createElement('div');
           tag.className = 'tag';
@@ -644,6 +663,7 @@
         if (r.rank !== i) {
           r.rank = i;
           r.row.style.transform = `translateY(${i * 27}px)`;
+          r.crown.classList.toggle('hidden', i !== 0); // the leader wears the crown
         }
         if (r.last !== b.floor) { r.last = b.floor; r.fl.textContent = b.floor; }
         if (r.dead !== b.dead) { r.dead = b.dead; r.row.classList.toggle('out', b.dead); }
@@ -689,7 +709,7 @@
         this._thumbInto(img, 'skin', b.skin);
         const nm = document.createElement('span');
         nm.className = 'nm';
-        nm.textContent = this.nameOf(b) + (b.ab ? ' ' + S.abIcon(b.ab) : '') + (b.dc ? ' ⚡' : '');
+        nm.textContent = this.nameOf(b) + (i === 0 && !r.unranked ? ' 👑' : '') + (b.ab ? ' ' + S.abIcon(b.ab) : '') + (b.dc ? ' ⚡' : '');
         const fl = document.createElement('b');
         fl.textContent = S.fl(b.floor);
         li.append(medal, img, nm, fl);

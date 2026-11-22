@@ -63,6 +63,22 @@
       lead: 'soft', motif: [[0, 4, 6], [6, 5, 2], [8, 6, 8], [16, 5, 4], [20, 3, 4], [24, 4, 8]],
       drums: { k: 'x...............', s: '', h: '........o.......', g: '' },
     },
+    { // Purgatory: slow, hollow B minor dirge — tolling bells, a heartbeat kick, long grey pads
+      bpm: 72, swing: 0, level: 1.1,
+      chords: [{ b: 35, v: [54, 57, 62, 66] }, { b: 31, v: [55, 59, 62, 66] }, { b: 33, v: [52, 57, 61, 64] }, { b: 30, v: [54, 57, 61, 66] }],
+      pad: { cut: 900, rev: 0.8 }, bass: { pat: 'x.......x.....o.', tone: 'sub' },
+      arp: { rate: 2, seq: [0, 4, 2, 4, 1, 4, 3, 4], tone: 'bell', cut: 0, vel: 0.6 },
+      lead: 'soft', motif: [[0, 2, 6], [8, 1, 6], [16, 3, 4], [20, 2, 4], [24, 0, 8]],
+      drums: { k: 'x..x............', s: '', h: '............o...', g: '' },
+    },
+    { // World's End: vast, eerie whole-tone shimmer over a pulsing sub — the last climb
+      bpm: 110, swing: 0, level: 1.15,
+      chords: [{ b: 36, v: [58, 62, 64, 68] }, { b: 38, v: [60, 64, 66, 70] }, { b: 34, v: [56, 60, 62, 66] }, { b: 40, v: [58, 62, 66, 68] }],
+      pad: { cut: 1600, rev: 0.9 }, bass: { pat: 'x.o.x.o.x.o.x.oo', tone: 'saw' },
+      arp: { rate: 1, seq: [0, 2, 4, 6, 7, 6, 4, 2], tone: 'bell', cut: 0, vel: 0.7 },
+      lead: 'saw', motif: [[0, 6, 4], [4, 5, 4], [8, 4, 8], [16, 6, 2], [18, 7, 2], [20, 6, 4], [24, 3, 8]],
+      drums: { k: 'x...x...x...x.x.', s: '....x.......x...', h: 'o.xoo.xoo.xoo.xo', g: '' },
+    },
   ];
   const vel =(p, i) => (p && p[i] === 'x' ? 1 : p && p[i] === 'o' ? 0.55 : 0);
 

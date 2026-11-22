@@ -81,7 +81,7 @@
       grounded: true, ground: null, coyote: 0, buffer: 0, held: false, forced: false,
       boost: 0, lock: 0, shove: 0, bumpT: 0, stompT: 0, face: 1, airJ: 0, shields: 0,
       remote: false, name: null, slot: 0,
-      floor: 0, floorT: 0, maxY: 0, coins: 0, coinFrac: 0, dead: false,
+      floor: 0, floorT: 0, maxY: 0, coins: 0, coinFrac: 0, dead: false, powerless: false,
       perk: S.perkFor(null), skin: null, ab: null, bot: null, anim: null,
     };
   }
@@ -256,13 +256,14 @@
       if (FIRST_FLOOR[f] !== undefined) return FIRST_FLOOR[f];
       if (this.combo.length) return this.combo.shift();
       this.comboCool--;
-      if (f > 35 && this.comboCool <= 0 && this.rng() < 0.12 + d * 0.3) {
+      const k = Math.min(S.stepOf(f), 10);
+      if (f > 35 && this.comboCool <= 0 && this.rng() < 0.12 + d * 0.3 + 0.06 * k) {
         this.combo = COMBOS[Math.floor(this.rng() * COMBOS.length)].slice();
-        this.comboCool = Math.round(lerp(14, 6, d));
+        this.comboCool = Math.max(3, Math.round(lerp(14, 6, d)) - k);
         return this.combo.shift();
       }
-      const opts = [[T.NORMAL, lerp(100, 30, d)]];
-      const hazOk = this.hazardRun < (d > 0.85 ? 3 : d > 0.45 ? 2 : 1);
+      const opts = [[T.NORMAL, lerp(100, 30, d) * Math.max(0.35, 1 - 0.13 * k)]];
+      const hazOk = this.hazardRun < (d > 0.85 ? 3 : d > 0.45 ? 2 : 1) + Math.min(2, k);
       if (f >= 6) opts.push([T.JUMP, 8 + 6 * d]);
       if (f >= 19) opts.push([T.SPEED, 7 + 8 * d]);
       if (hazOk && f >= 8) opts.push([T.ICE, 8 + 22 * d]);
@@ -286,25 +287,28 @@
       const special = f % 10 === 0 || MILESTONE_FLOOR[f];
 
       const prevHazard = a.type === T.CRUMBLE || a.type === T.BOOM;
-      let dy = lerp(2.15, 3.0, d) + this._r(-0.2, 0.2);
+      // Every 500 floors: taller steps, narrower platforms, wider gaps, more hazards. Gaps stay
+      // within the measured jump reach, so every floor is still always climbable.
+      const k = Math.min(S.stepOf(f), 10);
+      let dy = lerp(2.15, 3.0, d) + this._r(-0.2, 0.2) + 0.09 * k;
       if (op === 'stairs') dy = this._r(1.9, 2.15);
       else if (op === 'spiral') dy = this._r(2.2, 2.5);
       if (prevHazard) dy = Math.min(dy, 2.7);
       dy = Math.min(dy, C.MAX_DY);
 
-      let hw = lerp(2.7, 1.4, d) * this._r(0.9, 1.15);
+      let hw = lerp(2.7, 1.4, d) * this._r(0.9, 1.15) * Math.max(0.7, 1 - 0.07 * k);
       let type = special ? T.NORMAL : this._pickType(f, d);
       if (op === 'pads' && (f === 2 || f === 7)) type = T.JUMP;
       if (special) hw = Math.max(hw, 2.6);
       if (type === T.JUMP) hw = Math.max(hw, 1.6);
-      hw = Math.max(hw, 1.25);
+      hw = Math.max(hw, k ? 1.0 : 1.25);
       this.hazardRun = isHazard(type) ? this.hazardRun + 1 : 0;
 
       // Edge-to-edge gap, bounded by what a real jump covers from a standstill.
       let maxGap = S.reachFor(dy) * C.REACH_MARGIN;
       if (a.type === T.ICE) maxGap *= 0.82;
       if (prevHazard) maxGap *= 0.8;
-      let gk = this._r(lerp(-0.45, 0.18, d), lerp(0.38, 0.95, d));
+      let gk = this._r(Math.min(0.8, lerp(-0.45, 0.18, d) + 0.1 * k), Math.min(1, lerp(0.38, 0.95, d) + 0.03 * k));
       if (op === 'stairs') gk = this._r(-0.45, -0.2);
       else if (op === 'spiral') gk = this._r(0.15, 0.45);
       else if (op === 'zigzag') gk = this._r(0.25, 0.6);
@@ -424,6 +428,15 @@
         p.floor = q.floor;
         p.floorT = this.time;
         this.emit('floor', q, 0, p);
+        // World's End: every ability stops working (shields, extra jumps, lava slowdown, coins…).
+        if (p.human && !this.race && !p.powerless && q.floor >= S.NO_POWER_FLOOR) {
+          p.powerless = true;
+          p.perk = S.perkFor(null);
+          p.airJ = 0;
+          p.shields = 0;
+          this.lavaMul = 1;
+          this.emit('nopower', q, 0, p);
+        }
       }
       if (q.beacon) {
         q.beacon = false;
@@ -532,6 +545,8 @@
         const v0 = this.race ? R.v0 : C.LAVA_V0, vmax = this.race ? R.vmax : C.LAVA_VMAX, tau = this.race ? R.tau : C.LAVA_TAU;
         let v = (v0 + (vmax - v0) * (1 - Math.exp(-this.runTime / tau))) * this.lavaMul;
         if (this.runTime < 3) v *= 0.5;
+        // Solo: the lava speeds up by 15% for every 500 floors climbed.
+        if (!this.race) v *= 1 + 0.15 * Math.min(S.stepOf(this.p.floor), 10);
         // Rubber band against the human's climb (or the leader once the human is out).
         let ref = this.p.maxY;
         if (this.p.dead) for (const b of this.bodies) if (!b.dead && b.maxY > ref) ref = b.maxY;

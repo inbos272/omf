@@ -217,6 +217,40 @@ function reviveAndWorlds() {
     && worlds.join() === '4,5,5,6,6' && S.ENVS[5].id === 'hell' && S.ENVS[6].id === 'heaven';
 }
 
+// 3f. Beyond floor 500: every 500 floors gets harder, yet stays climbable; at 5000 abilities end.
+function deepTower() {
+  const reach = reachability(3, 5600);
+  const g = new S.Sim();
+  g.reset(4242, 0, {});
+  while (g.genFloor < 5600) g._generateFloor();
+  const avg = (f0, f1, fn) => { let s = 0, n = 0; for (let f = f0; f < f1; f++) { const q = g.findGolden(f); if (q) { s += fn(q, f); n++; } } return s / n; };
+  const hw = [avg(300, 500, (q) => q.hw), avg(2000, 2500, (q) => q.hw), avg(5000, 5500, (q) => q.hw)];
+  const dy = [avg(301, 500, (q, f) => q.y - g.findGolden(f - 1).y), avg(2001, 2500, (q, f) => q.y - g.findGolden(f - 1).y), avg(5001, 5500, (q, f) => q.y - g.findGolden(f - 1).y)];
+  // Lava speed at the same moment of a run, below and above the first two steps.
+  const lavaV = (floor) => { const s = new S.Sim(); s.reset(3, 0, {}); s.started = true; s.runTime = 200; s.p.floor = floor; s.p.maxY = s.lavaY + 10; s._world(C.DT); return s.lavaV; };
+  const lv = [lavaV(100), lavaV(600), lavaV(1100)];
+  // World's End: landing on floor 5000 strips the ability.
+  const s = new S.Sim();
+  let ev = 0;
+  s.emit = (n) => { if (n === 'nopower') ev++; };
+  s.reset(9, 0, { perk: S.perkFor('rocket'), ab: 'rocket', startFloor: 150 });
+  while (s.genFloor < 5002) s._generateFloor();
+  const before = s.p.perk.airJumps;
+  s._land(s.p, s.findGolden(4999));
+  const mid = s.p.perk.airJumps;
+  s._land(s.p, s.findGolden(5000));
+  const ms = S.MILESTONES.map((m) => m.floor).join(',');
+  log(`DEEP TOWER: avg width ${hw.map((v) => v.toFixed(2)).join(' → ')} | avg step ${dy.map((v) => v.toFixed(2)).join(' → ')} | lava speed at 100/600/1100F ${lv.map((v) => v.toFixed(2)).join(' / ')} | rocket jumps ${before}→${mid}→${s.p.perk.airJumps} at 5000F (event ${ev}) | worlds ${S.ENVS.map((e) => e.from).join(',')} | milestones ${ms}`);
+  // Width and step height reach their safe limits (every jump must stay possible) by about 2000F;
+  // after that the climb keeps hardening through wider gaps, more hazards and faster lava.
+  const haz = (f0, f1) => avg(f0, f1, (q) => (q.type === 1 || q.type === 3 || q.type === 5 ? 1 : 0));
+  const hz = [haz(300, 500), haz(2000, 2500), haz(5000, 5500)];
+  log(`  hazard share ${hz.map((v) => (v * 100).toFixed(0) + '%').join(' → ')}`);
+  return reach && hw[1] < hw[0] && hw[2] <= hw[1] + 0.03 && dy[1] > dy[0] && dy[2] >= dy[1] - 0.05 && hz[1] > hz[0] && hz[2] >= hz[1] - 0.02 && lv[1] > lv[0] && lv[2] > lv[1]
+    && before === 2 && mid === 2 && s.p.perk.airJumps === 0 && s.p.powerless && ev === 1
+    && S.envFor(1999) === 6 && S.envFor(2000) === 7 && S.envFor(5000) === 8 && ms.includes('2000') && ms.includes('5000');
+}
+
 // 4. Abilities change the physics the way their descriptions promise.
 function perks() {
   const top = (ab, presses) => {
@@ -297,6 +331,7 @@ setTimeout(() => {
     pass = feltFalls() && pass;
     pass = elevatorAndOnline() && pass;
     pass = reviveAndWorlds() && pass;
+    pass = deepTower() && pass;
     pass = perks() && pass;
     pass = races() && pass;
   } catch (e) { pass = false; log('EXCEPTION ' + e.stack); }

@@ -31,6 +31,11 @@ class Storage {
   async get(k) { const v = this.map.get(k); return v === undefined ? undefined : structuredClone(v); }
   async put(k, v) { this.map.set(k, structuredClone(v)); }
   async delete(k) { return this.map.delete(k); }
+  async list(o) {
+    const out = new Map(), pre = (o && o.prefix) || '';
+    for (const [k, v] of [...this.map].sort()) if (k.startsWith(pre)) out.set(k, structuredClone(v));
+    return out;
+  }
   async setAlarm(t) { this.alarm = t; }
 }
 class Ctx {
@@ -421,6 +426,40 @@ async function hallOfFame() {
     && out.me.in === false && out.me.best === 2999 && res.me.in === true && old === 'outdated';
 }
 
+// Admin API: refused without the key; with it, look up, edit, remove, rename, reset, export.
+async function adminApi() {
+  const env = makeEnv();
+  env.ADMIN_KEY = 'sta_' + 'k'.repeat(40);
+  const call = async (path, body, key) => {
+    const r = await worker.fetch(new Request('https://fake' + path, {
+      method: body ? 'POST' : 'GET', body: body ? JSON.stringify(body) : undefined,
+      headers: key === null ? {} : { Authorization: 'Bearer ' + (key || env.ADMIN_KEY) },
+    }), env);
+    return { status: r.status, j: await r.json().catch(() => null) };
+  };
+  const net = new S.Net({ baseUrl: 'https://fake', fetchFn: (u, o) => worker.fetch(new Request(u, o), env) });
+  await net.claimNick('pid-ann-0000', '하늘왕');
+  await net.submitScore('pid-ann-0000', '하늘왕', 420);
+  await net.claimNick('pid-bob-0000', 'Cheater');
+  await net.submitScore('pid-bob-0000', 'Cheater', 99999);
+  const noKey = (await call('/admin/player', { name: '하늘왕' }, null)).status;
+  const badKey = (await call('/admin/player', { name: '하늘왕' }, 'sta_' + 'x'.repeat(40))).status;
+  const look = (await call('/admin/player', { name: '하늘왕' })).j;
+  const set = (await call('/admin/player', { name: '하늘왕', set: { rp: 2600, best: 3100, placed: true } })).j;
+  const rem = (await call('/admin/remove', { name: 'cheater', reset: true })).j;
+  const ren = (await call('/admin/rename', { name: '하늘왕', newName: 'SkyKing' })).j;
+  const floorTop = (await net.top('floor', 'pid-ann-0000')).top.map((e) => e.name + ':' + e.v).join(',');
+  const hof = (await net.top('hof', 'pid-ann-0000')).hof.map((e) => `${e.name}:${e.floor}/${e.rp}`).join(',');
+  const exp = (await call('/admin/export')).j;
+  const season = (await call('/admin/reset', { what: 'rp' })).j;
+  const after = (await call('/admin/player', { pid: 'pid-ann-0000' })).j.player;
+  const noAdmin = await worker.fetch(new Request('https://fake/admin/export', { headers: { Authorization: 'Bearer anything-at-all-long-enough-0000' } }), makeEnv());
+  log(`ADMIN: no key ${noKey}, wrong key ${badKey}, admin unset ${noAdmin.status} | lookup best ${look.player.best} | set → rp ${set.player.rp} best ${set.player.best} | removed ${rem.removed} | renamed ${ren.name} | floor top ${floorTop} | hof ${hof} | export keys ${Object.keys(exp.data).length} | season reset ${season.players} players → rp ${after.rp} placed ${after.placed}`);
+  return noKey === 403 && badKey === 403 && noAdmin.status === 403 && look.player.best === 420 && set.player.rp === 2600 && set.player.best === 3100
+    && rem.removed === 'Cheater' && ren.name === 'SkyKing' && floorTop === 'SkyKing:3100' && hof === 'SkyKing:3100/2600'
+    && exp.ok && Object.keys(exp.data).length > 3 && season.players === 2 && after.rp === 0 && after.placed === false;
+}
+
 // Ranked placement: five games with no RP change, then a first tier from Bronze to Gold.
 async function placement() {
   const env = makeEnv();
@@ -515,6 +554,7 @@ async function versionCheck() {
     pass = (await nicknames()) && pass;
     pass = (await placement()) && pass;
     pass = (await hallOfFame()) && pass;
+    pass = (await adminApi()) && pass;
     pass = netSmooth() && pass;
     pass = (await refreshAfterFall()) && pass;
     pass = (await casualMatch()) && pass;

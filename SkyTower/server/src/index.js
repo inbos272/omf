@@ -7,8 +7,20 @@ export { Ledger } from './ledger.js';
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
+
+// Admin requests need "Authorization: Bearer <ADMIN_KEY>". The key is a Worker secret
+// (npx wrangler secret put ADMIN_KEY), never in the code. Without it, admin is switched off.
+function adminOk(req, env) {
+  const key = env.ADMIN_KEY;
+  if (!key || key.length < 24) return false;
+  const got = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+  if (got.length !== key.length) return false;
+  let diff = 0;
+  for (let i = 0; i < key.length; i++) diff |= key.charCodeAt(i) ^ got.charCodeAt(i); // constant time
+  return diff === 0;
+}
 
 export default {
   async fetch(req, env) {
@@ -36,6 +48,16 @@ export default {
       const stub = env.LEDGER.get(env.LEDGER.idFromName('global'));
       const res = await stub.fetch('https://ledger/top?' + q.toString());
       return new Response(res.body, { headers: { ...CORS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+    }
+
+    // Admin: /admin/export, /admin/player, /admin/remove, /admin/rename, /admin/reset (see README).
+    if (url.pathname.startsWith('/admin/')) {
+      if (!adminOk(req, env)) return Response.json({ ok: false, code: 'forbidden' }, { status: 403, headers: CORS });
+      const body = req.method === 'POST' ? await req.text() : undefined;
+      if (body && body.length > 4096) return new Response('too large', { status: 413, headers: CORS });
+      const stub = env.LEDGER.get(env.LEDGER.idFromName('global'));
+      const res = await stub.fetch('https://ledger' + url.pathname + url.search, { method: req.method, body, headers: { 'Content-Type': 'application/json' } });
+      return new Response(res.body, { status: res.status, headers: { ...CORS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
     }
 
     // Nickname registry: POST /nick {pid, name} → {ok, name} | {ok:false, code:'taken'|'invalid'}

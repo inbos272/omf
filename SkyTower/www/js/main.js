@@ -732,6 +732,14 @@
       case 'beacon': audio.play('beacon'); if (mine) ui.toast(t('hud.beacon'), 1500); break;
       case 'warn': if (a) { audio.play('warn'); G.vibrate(40); } break;
       case 'floor': if (mine) onFloor(a.floor); break;
+      case 'nopower':
+        ui.abilityOff();
+        ui.banner(S.fl(a.floor), t('nopower.title'), t('nopower.sub'));
+        audio.play('warn');
+        scene.flash = Math.max(scene.flash, 0.5);
+        scene.flashC = [0.55, 0.3, 1];
+        G.vibrate(120);
+        break;
       case 'shield':
         if (!mine) break;
         audio.play('shield');
@@ -770,6 +778,17 @@
       audio.play('env');
       ui.banner(env.en, t('env.' + env.id), t('env.sub', { f: env.from }));
       G.vibrate(60);
+    }
+    // Every 500 floors the tower gets much harder: say so (as a toast if a world banner is up).
+    if (G.mode === 'solo' && f > 0 && f % 500 === 0) {
+      const msg = t('step.up', { n: S.stepOf(f) });
+      if (S.ENVS.some((x) => x.from === f)) ui.toast(msg, 3000);
+      else {
+        ui.banner(S.fl(f), msg, t('step.sub'));
+        audio.play('warn');
+        scene.flash = Math.max(scene.flash, 0.35);
+        scene.flashC = [1, 0.4, 0.3];
+      }
     }
     if (G.mode === 'solo') claimMilestones(f);
   }

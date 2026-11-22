@@ -90,7 +90,22 @@
       hemiS: hex(0xfffaf0), hemiG: hex(0xf3d9a8), light: [1.12, 1.05, 0.9], colA: hex(0xfff6e6), colB: hex(0xf0dcb0),
       stars: 0, fogR: [60, 260], amb: 'feather',
     },
+    {
+      id: 'purgatory', name: '연옥', en: 'PURGATORY', from: 2000,
+      top: hex(0x1c1a24), mid: hex(0x4b4656), hor: hex(0xa89a8a), sun: hex(0xd9c3a0), fog: hex(0x58525e),
+      hemiS: hex(0x9a92a6), hemiG: hex(0x5a4a44), light: [0.92, 0.86, 0.8], colA: hex(0x6b6470), colB: hex(0x45404c),
+      stars: 0.15, fogR: [30, 150], amb: 'smoke',
+    },
+    {
+      id: 'end', name: '세상의 끝', en: "WORLD'S END", from: 5000,
+      top: hex(0x000000), mid: hex(0x07021a), hor: hex(0x3d0f6e), sun: hex(0xb9f4ff), fog: hex(0x0a0420),
+      hemiS: hex(0x6f5fd6), hemiG: hex(0x1a0f3a), light: [0.85, 0.92, 1.2], colA: hex(0x231a44), colB: hex(0x0f0a24),
+      stars: 1.4, fogR: [80, 320], amb: 'void',
+    },
   ];
+  // Every 500 floors the tower gets markedly harder (layout and lava). 0 below floor 500.
+  S.stepOf = (floor) => Math.floor(Math.max(0, floor) / 500);
+  S.NO_POWER_FLOOR = 5000; // at World's End every character ability stops working
   S.envFor = (floor) => {
     let i = 0;
     for (let k = 0; k < S.ENVS.length; k++) if (floor >= S.ENVS[k].from) i = k;
@@ -132,6 +147,7 @@
     sk('yeti', '설산 탐험가', 'm', 0, 'blob', 0xeaf4ff, 0x9fc4ea, 'horns', 0xb3c7dd, 0xd9ecff, { milestone: 100 }),
     sk('golem', '용암 골렘', 'm', 0, 'cube', 0x3a2c30, 0xff7a2e, 'flame', 0xff7a2e, 0xff6a1f, { milestone: 200, em: 0.1, visor: 0xffa329 }),
     sk('lord', '탑의 지배자', 'm', 0, 'tall', 0x18152b, 0xffcf4d, 'crown', 0xffe9a3, 0xffe27a, { milestone: 500, em: 0.25, visor: 0xffe27a, gloss: 1 }),
+    sk('warden', '연옥의 파수꾼', 'm', 0, 'tall', 0x5d5868, 0xd9cdb8, 'halo', 0xff8a5c, 0xc9b8a8, { milestone: 2000, em: 0.3, visor: 0xff8a5c }),
   ];
 
   // Platform themes tint only the normal platforms, so hazards stay readable.
@@ -149,6 +165,7 @@
     th('neon', '네온', 5400, 0x24174a, 0x3a2375, 0x120b2c, [3, 0.6, 0, 0.6], 1),
     th('crystal', '수정', 0, 0xb68bff, 0x7fd8ff, 0x6a48c4, [2.5, 0.75, 0, 1], 0.5, { milestone: 100 }),
     th('gold', '황금', 0, 0xffd257, 0xffe9a3, 0xc08a22, [3, 0.4, 0.12, 1], 0.25, { milestone: 500 }),
+    th('void', '공허', 0, 0x120a2e, 0x7a3cff, 0x05020f, [4.5, 0.85, 0.2, 1], 1.4, { milestone: 5000 }),
   ];
 
   S.MILESTONES = [
@@ -157,6 +174,8 @@
     { floor: 100, coins: 1000, skin: 'yeti', theme: 'crystal', label: '코인 1000 + 설산 탐험가 + 수정 발판' },
     { floor: 200, coins: 2500, skin: 'golem', label: '코인 2500 + 용암 골렘' },
     { floor: 500, coins: 8000, skin: 'lord', theme: 'gold', label: '코인 8000 + 탑의 지배자 + 황금 발판' },
+    { floor: 2000, coins: 30000, skin: 'warden', label: '코인 30000 + 연옥의 파수꾼' },
+    { floor: 5000, coins: 100000, theme: 'void', label: '코인 100000 + 공허 발판' },
   ];
 
   S.RARITY = {
@@ -204,6 +223,7 @@
     yeti: A(5, '🏔️', { grip: 1, airJumps: 1, lava: 0.92 }),
     golem: A(5, '🌋', { shields: 1, boomProof: 1, fuse: 1.6 }),
     lord: A(5, '🏰', { airJumps: 2, magnet: 3, lava: 0.9 }),
+    warden: A(5, '🕯️', { shields: 2, airJumps: 1, lava: 0.88, fuse: 1.5 }),
   };
   S.TIER_RARITY = ['', 'c', 'r', 'e', 'l', 'm'];
   S.perkFor = (id) => Object.assign({}, S.PERK0, id && S.ABILITIES[id] ? S.ABILITIES[id].perk : null);
@@ -211,7 +231,7 @@
     mint: 'spring', coral: 'swift', skyblue: 'feather', grape: 'grip', lime: 'thrifty', peach: 'coiny', cocoa: 'sturdy',
     bot: 'magnet', frog: 'leap', cat: 'nimble', bunny: 'bouncy', penguin: 'chill', heli: 'sprinter', wizard: 'lucky', party: 'fireproof',
     knight: 'shield', king: 'golden', devil: 'cool', angel: 'glide', ninja: 'double', alien: 'antigrav', ghost: 'light',
-    flame: 'phoenix', galaxy: 'rocket', gold: 'midas', nomad: 'nomad', yeti: 'yeti', golem: 'golem', lord: 'lord',
+    flame: 'phoenix', galaxy: 'rocket', gold: 'midas', nomad: 'nomad', yeti: 'yeti', golem: 'golem', lord: 'lord', warden: 'warden',
   };
   S.SKINS.forEach((s) => (s.ab = SKIN_AB[s.id] || null));
   // Abilities that change how a rival moves (economy perks mean nothing to an AI).

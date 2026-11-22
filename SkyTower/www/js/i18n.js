@@ -192,6 +192,12 @@
   a('menu.tag', '용암보다 빠르게!', 'Outclimb the lava!', '溶岩より速く！', '比熔岩更快！', '¡Más rápido que la lava!');
   a('env.hell', '지옥', 'Inferno', '地獄', '地狱', 'Infierno');
   a('env.heaven', '천국', 'Heaven', '天国', '天堂', 'Cielo');
+  a('env.purgatory', '연옥', 'Purgatory', '煉獄', '炼狱', 'Purgatorio');
+  a('env.end', '세상의 끝', "World's End", '世界の果て', '世界尽头', 'El fin del mundo');
+  a('nopower.title', '모든 능력이 사라졌어요', 'All abilities are gone', 'すべての能力が消えた', '所有能力都消失了', 'Se perdieron todas las habilidades');
+  a('nopower.sub', '세상의 끝에서는 오직 실력만 통해요', "At World's End only skill counts", '世界の果てでは実力だけが頼り', '在世界尽头只能靠实力', 'En el fin del mundo solo cuenta la habilidad');
+  a('step.up', '난이도 급상승! ({n}단계)', 'Difficulty spike! (stage {n})', '難易度急上昇！（第{n}段階）', '难度骤升！（第{n}阶段）', '¡Dificultad disparada! (nivel {n})');
+  a('step.sub', '발판이 좁아지고 간격과 용암 속도가 늘어나요', 'Narrower platforms, wider gaps, faster lava', '足場が狭く、間隔が広く、溶岩が速く', '平台更窄、间距更大、熔岩更快', 'Plataformas estrechas, huecos mayores, lava más rápida');
 
   // ---- nickname ----
   a('nick.title', '닉네임을 정해 주세요', 'Choose your nickname', 'ニックネームを決めよう', '请设置昵称', 'Elige tu apodo');
@@ -286,7 +292,8 @@
   ab('nomad', ['사막의 발걸음', 'Desert Stride', '砂漠の足取り', '沙漠步伐', 'Paso del desierto'], ['빠른 발, 미끄럼 방지, 긴 질주', 'Faster, no ice slip, longer speed boosts', '俊足・滑り止め・長い加速', '更快、防滑、加速更久', 'Más rápido, sin resbalar, turbo largo']);
   ab('yeti', ['설산의 왕', 'Mountain King', '雪山の王', '雪山之王', 'Rey de la montaña'], ['2단 점프, 미끄럼 방지, 용암 -8%', 'Double jump, ice grip, lava -8%', '2段ジャンプ・滑り止め・溶岩-8%', '二段跳、防滑、熔岩-8%', 'Doble salto, agarre, lava -8%']);
   ab('golem', ['용암 심장', 'Magma Heart', 'マグマの心', '熔岩之心', 'Corazón de magma'], ['보호막, 방폭, 튼튼한 발판', 'Shield, blast-proof, steady step', 'シールド・防爆・頑丈な足場', '护盾、防爆、稳固', 'Escudo, antiexplosión, paso firme']);
-  ab('lord', ['탑의 지배', 'Tower Rule', '塔の支配', '塔之统治', 'Dominio de la torre'], ['3단 점프, 코인 자석, 용암 -10%', 'Triple jump, magnet, lava -10%', '3段ジャンプ・磁石・溶岩-10%', '三段跳、磁铁、熔岩-10%', 'Triple salto, imán, lava -10%']);
+  ab('warden', ['연옥의 등불', 'Purgatory Lantern', '煉獄の灯', '炼狱之灯', 'Farol del purgatorio'], ['보호막 2개, 2단 점프, 용암 -12%, 튼튼한 발판', 'Two shields, double jump, lava -12%, steady step', 'シールド2・2段ジャンプ・溶岩-12%・頑丈な足場', '两层护盾、二段跳、熔岩-12%、稳固', 'Dos escudos, doble salto, lava -12%, paso firme']);
+  ab('lord',['탑의 지배', 'Tower Rule', '塔の支配', '塔之统治', 'Dominio de la torre'], ['3단 점프, 코인 자석, 용암 -10%', 'Triple jump, magnet, lava -10%', '3段ジャンプ・磁石・溶岩-10%', '三段跳、磁铁、熔岩-10%', 'Triple salto, imán, lava -10%']);
 
   // ---- skins ----
   const names = (prefix, rows) => { for (const r of rows) a(prefix + r[0], ...r.slice(1)); };
@@ -306,6 +313,7 @@
     ['galaxy', '은하수', 'Galaxy', '銀河', '银河', 'Galaxia'], ['gold', '황금콩', 'Goldie', '金まめ', '黄金豆', 'Dorado'],
     ['nomad', '사막 여행자', 'Nomad', '砂漠の旅人', '沙漠旅人', 'Nómada'], ['yeti', '설산 탐험가', 'Yeti', '雪山探検家', '雪山探险家', 'Yeti'],
     ['golem', '용암 골렘', 'Lava Golem', '溶岩ゴーレム', '熔岩魔像', 'Gólem de lava'], ['lord', '탑의 지배자', 'Tower Lord', '塔の支配者', '塔之主宰', 'Señor de la torre'],
+    ['warden', '연옥의 파수꾼', 'Purgatory Warden', '煉獄の番人', '炼狱守望者', 'Guardián del purgatorio'],
   ]);
   names('theme.', [
     ['classic', '초원', 'Meadow', '草原', '草地', 'Pradera'], ['cloud', '솜구름', 'Cotton Cloud', 'わたぐも', '棉花云', 'Nube'],
@@ -313,6 +321,7 @@
     ['sand', '사암', 'Sandstone', '砂岩', '砂岩', 'Arenisca'], ['marble', '대리석', 'Marble', '大理石', '大理石', 'Mármol'],
     ['steel', '강철', 'Steel', '鋼鉄', '钢铁', 'Acero'], ['neon', '네온', 'Neon', 'ネオン', '霓虹', 'Neón'],
     ['crystal', '수정', 'Crystal', 'クリスタル', '水晶', 'Cristal'], ['gold', '황금', 'Gold', '黄金', '黄金', 'Oro'],
+    ['void', '공허', 'Void', '虚空', '虚空', 'Vacío'],
   ]);
 
   // ---- API ----

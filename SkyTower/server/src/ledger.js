@@ -43,6 +43,12 @@ export class Ledger {
       const body = await req.json().catch(() => null);
       return Response.json(body ? await this.nick(body) : { ok: false, code: 'invalid' });
     }
+    if (url.pathname.startsWith('/admin/')) {
+      // Only reachable through the Worker after the admin key check (index.js).
+      const body = req.method === 'POST' ? await req.json().catch(() => ({})) : {};
+      const res = await this.admin(url.pathname.slice(7), url.searchParams, body);
+      return Response.json(res, { status: res.ok ? 200 : 400 });
+    }
     if (url.pathname === '/top') {
       return Response.json(await this.top(url.searchParams.get('type'), String(url.searchParams.get('pid') || '')));
     }
@@ -192,6 +198,76 @@ export class Ledger {
     hof = Object.values(byPid).sort((a, b) => a.t - b.t).slice(0, HOF_MAX);
     await this.ctx.storage.put('hof', hof);
     return hof;
+  }
+
+  // ---- admin ----
+  // Find a player by device id or by (registered) nickname.
+  async findPid(q) {
+    if (q.pid && validPid(q.pid)) return q.pid;
+    if (q.name) return (await this.ctx.storage.get('n:' + nameKey(q.name))) || null;
+    return null;
+  }
+
+  async admin(op, params, body) {
+    const q = { pid: body.pid || params.get('pid'), name: body.name || params.get('name') };
+    if (op === 'export') {
+      const all = {};
+      for (const [k, v] of await this.ctx.storage.list()) all[k] = v;
+      return { ok: true, at: Date.now(), data: all };
+    }
+    if (op === 'reset') {
+      // what: 'floor' | 'rp' (new ranked season: everyone back to placement) | 'hof'
+      const what = body.what;
+      if (what === 'floor') await this.ctx.storage.put('top:floor', []);
+      else if (what === 'hof') await this.ctx.storage.put('hof', []);
+      else if (what === 'rp') {
+        let n = 0;
+        for (const [k, p] of await this.ctx.storage.list({ prefix: 'p:' })) {
+          Object.assign(p, { rp: 0, peak: 0, placed: false, placements: [] });
+          await this.ctx.storage.put(k, p);
+          n++;
+        }
+        await this.ctx.storage.put('top:rp', []);
+        return { ok: true, what, players: n };
+      } else return { ok: false, code: 'what' };
+      return { ok: true, what };
+    }
+    const pid = await this.findPid(q);
+    if (!pid) return { ok: false, code: 'not-found' };
+    const p = await this.get(pid);
+    if (op === 'player' && !body.set) return { ok: true, player: this.view(p) };
+    if (op === 'player') {
+      // body.set: any of rp, peak, best, casualWins, rankedGames, placed
+      const s = body.set;
+      for (const k of ['rp', 'peak', 'best', 'casualWins', 'rankedGames']) {
+        if (s[k] !== undefined && Number.isFinite(+s[k]) && +s[k] >= 0) p[k] = Math.floor(+s[k]);
+      }
+      if (s.placed !== undefined) p.placed = !!s.placed;
+      if (s.rp !== undefined && s.peak === undefined) p.peak = Math.max(p.peak, p.rp);
+      await this.ctx.storage.put('p:' + pid, p);
+      await this.board('floor', p, p.best);
+      await this.board('rp', p, p.placed ? p.peak : 0);
+      await this.fame(p);
+      return { ok: true, player: this.view(p) };
+    }
+    if (op === 'remove') {
+      // Off every board and out of the hall of fame; with reset:true their records are zeroed too.
+      await this.board('floor', p, 0);
+      await this.board('rp', p, 0);
+      const hof = await this.hallOfFame();
+      const i = hof.findIndex((e) => e.pid === pid);
+      if (i >= 0) { hof.splice(i, 1); await this.ctx.storage.put('hof', hof); }
+      if (body.reset) {
+        Object.assign(p, { best: 0, peak: 0, rp: 0 });
+        await this.ctx.storage.put('p:' + pid, p);
+      }
+      return { ok: true, removed: p.name };
+    }
+    if (op === 'rename') {
+      const res = await this.nick({ pid, name: body.newName });
+      return res.ok ? { ok: true, name: res.name } : res;
+    }
+    return { ok: false, code: 'op' };
   }
 
   // Insert / update one player on a leaderboard (sorted by value, earlier holder wins ties).

@@ -16,7 +16,7 @@
   S.MILESTONES.forEach((m) => (MILE[m.floor] = 1));
   S.ENVS.forEach((e) => { if (e.from) MILE[e.from] = 1; });
 
-  const AMB_RATE = { wisp: 2.5, sand: 26, snow: 30, ember: 24, dust: 14, ash: 34, feather: 12 };
+  const AMB_RATE = { wisp: 2.5, sand: 26, snow: 30, ember: 24, dust: 14, ash: 34, feather: 12, smoke: 10, void: 22 };
   // Colours used for every character every frame: shared, not re-allocated.
   const EYE = [0.11, 0.13, 0.2], WHITE = [1, 1, 1], PINK = [1, 0.5, 0.5], GREY = [0.3, 0.33, 0.4];
   const tone = (skin) => skin._tone || (skin._tone = {
@@ -198,6 +198,32 @@
       }
       clouds(18, [1, 1, 1], -46, -18, 0.55);
       clouds(8, [1, 0.98, 0.94], 5, 35, 0.5);
+    } else if (envId === 'purgatory') {
+      // Broken grey stairs and pillars rising out of ash fog, with lone candle flames.
+      for (let i = 0; i < 14; i++) {
+        const [x, z] = ring(i, 14, 65, 150), s = r(3, 7), h = r(25, 70), y = r(-60, -20), tilt = r(-0.35, 0.35);
+        put(M.CYL, x, y, z, s, h, s, tilt, hx(0x5a5462), 0.03);
+        put(M.CYL, x, y + h * 0.5, z, s * 1.3, 1.6, s * 1.3, tilt, hx(0x3e3946), 0.02);
+        if (i % 2 === 0) put(M.SPHERE, x, y + h * 0.5 + 2.2, z, 0.9, 1.4, 0.9, 0, hx(0xff9a5c), 1.6);
+      }
+      for (let i = 0; i < 20; i++) {
+        const [x, z] = ring(i, 20, 46, 115), s = r(1.5, 4);
+        put(M.RBOX, x, r(-26, 30), z, s, s * 0.35, s * 0.8, r(0, 6), hx(0x6b6470), 0.05);
+      }
+      clouds(14, [0.52, 0.5, 0.56], -48, -14, 0.1);
+      clouds(6, [0.6, 0.57, 0.62], 10, 40, 0.1);
+    } else if (envId === 'end') {
+      // The edge of everything: a giant ringed rift, drifting shards, glowing fault lines.
+      put(M.TORUS, 0, 120, -260, 90, 30, 90, 1.3, hx(0x8a4dff), 1.2, 1);
+      put(M.SPHERE, 0, 120, -262, 40, 40, 40, 0, hx(0x000000), 0, 0);
+      for (let i = 0; i < 22; i++) {
+        const [x, z] = ring(i, 22, 55, 170), s = r(1.5, 7);
+        put(M.GEM, x, r(-40, 60), z, s, s * 1.6, s, r(0, 6), hx(i % 3 ? 0x1d1440 : 0x7df0ff), i % 3 ? 0.15 : 1.3, 1);
+      }
+      for (let i = 0; i < 8; i++) {
+        const [x, z] = ring(i, 8, 90, 160);
+        put(M.CYL, x, r(-30, 40), z, 0.5, r(40, 90), 0.5, r(-0.6, 0.6), hx(0xb98bff), 1.5);
+      }
     } else {
       const pcs = [0xd87a4a, 0x6ac0d8, 0xb18cf0, 0xe5c07b, 0x62d68f, 0xf28cb1];
       for (let i = 0; i < 6; i++) {
@@ -1021,6 +1047,14 @@
         } else if (env === 'feather') {
           // soft light motes and feathers floating down
           fx.emit(x, y, z, Math.sin(this.time + x) * 0.8, -0.9, 0.3, 3.6, 0.22, 0.18, 1, 0.97, 0.85, 0.9, 0, true);
+        } else if (env === 'smoke') {
+          // slow grey smoke puffs rising, now and then a dying spark
+          if (Math.random() < 0.8) fx.emit(x, y - 6, z, 0.3, 1.1, 0.3, 4, 1.6, 3.4, 0.55, 0.52, 0.58, 0.18, 0, false);
+          else fx.emit(x, y - 6, z, 0.2, 2.5, 0.2, 2.4, 0.15, 0.03, 1, 0.6, 0.35, 1, 0, true);
+        } else if (env === 'void') {
+          // motes pulled upward into the rift, cyan and violet
+          const c = Math.random() < 0.5;
+          fx.emit(x, y - 10, z, 0, 6 + Math.random() * 6, 0, 2.2, 0.2, 0.02, c ? 0.5 : 0.75, c ? 0.95 : 0.45, 1, 1, -1.5, true);
         } else fx.emit(x, y, z, 0, 0.2, 0, 2.8, 0.13, 0.13, 0.75, 0.82, 1, 0.8, 0, true);
       }
       // Sparks off the lava surface, only when it is close enough to see.

@@ -435,3 +435,7 @@ input[type=range]::-moz-range-thumb { width: 26px; height: 26px; border: 0; bord
 #rankTabs button { font-size: 14px; padding: 0 4px; }
 img.pending { opacity: 0; }
 img { transition: opacity .15s; }
+
+/* crown beside first place */
+.crown { display: inline-block; margin-left: 3px; filter: drop-shadow(0 0 4px rgba(255, 210, 63, .8)); animation: bob 1s ease-in-out infinite alternate; }
+.rb-row .crown { font-size: 13px; margin: 0 2px; }
