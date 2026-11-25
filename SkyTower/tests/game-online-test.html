@@ -1,0 +1,90 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Game online tests</title>
+<style>body { font: 13px monospace; margin: 8px; } iframe { width: 390px; height: 844px; border: 0; position: absolute; left: -10000px; }</style>
+<pre id="out">running…</pre>
+<script type="module">
+// The real game (main.js / ui.js / net.js, muted) against the real server classes in a fake
+// Cloudflare runtime: play a casual match to its result, press "한 판 더", and check the game
+// really goes back to matchmaking and into a second match. Then a progress reset must erase the
+// player's server record.
+import { makeEnv } from './fake-cf.js';
+const lines = [];
+const log = (s) => { lines.push(s); document.getElementById('out').textContent = lines.join('\n'); };
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+let skew = 0;
+const now = () => Date.now() + skew;
+const env = makeEnv(now);
+
+localStorage.setItem('omf_skytower_v1', JSON.stringify({ v: 1, coins: 0, best: 42, lang: 'ko', nick: 'Tester', nickChosen: true, pid: 'pid-ui-test-0000', casualWins: 0, daily: { last: new Date().toISOString().slice(0, 10), streak: 1 } }));
+const f = document.createElement('iframe');
+f.src = '../www/index.html?mute&noserver&bot=0.0001';
+document.body.appendChild(f);
+await new Promise((r) => (f.onload = r));
+await wait(200);
+const win = f.contentWindow, doc = win.document, S = win.SKY, G = S.game;
+G.bot = null;
+Object.assign(G.net, { baseUrl: 'https://fake', socketFactory: env.socket, fetchFn: env.fetch, nowFn: now });
+let T = win.performance.now();
+const tick = async (n) => { for (let i = 0; i < n; i++) { T += 16.7; G.tick(T); if (i % 10 === 0) await wait(0); } };
+const flush = async () => { for (let i = 0; i < 6; i++) await wait(0); };
+const mm = () => env.MATCH.get(env.MATCH.idFromName('casual')).o;
+const vis = (id) => !doc.getElementById(id).classList.contains('hidden');
+
+async function playOneMatch(label) {
+  await flush();
+  const queued = G.state === 'matching' && G.net.phase === 'queue';
+  skew += 11000;                   // nobody else is coming: fill with AI
+  await mm().alarm();
+  await flush(); await tick(3); await flush();
+  const joined = G.state === 'raceIntro' && G.net.phase === 'room';
+  skew += 8000;                    // past the shared start (join 4 s + countdown 3.6 s)
+  await tick(20);
+  const racing = G.state === 'play';
+  const room = [...env.ROOM.inst.values()].pop();
+  await room.finish();             // the server ends the match
+  await flush();
+  await tick(5);
+  const result = G.state === 'over' && vis('raceOver');
+  log(`${label}: queued=${queued} joined=${joined} racing=${racing} result shown=${result}`);
+  return queued && joined && racing && result;
+}
+
+let pass = true;
+try {
+  await G.openVersus();
+  await flush();
+  log(`server check: ${doc.getElementById('vsCasual').disabled ? 'casual disabled' : 'casual enabled'}`);
+  doc.getElementById('vsCasual').click();
+  pass = (await playOneMatch('match 1')) && pass;
+
+  // "한 판 더" → back to matchmaking, and it stays there (the old bug re-showed the result at once)
+  doc.getElementById('btnRaceAgain').click();
+  await flush(); await tick(30); await flush();
+  const again = { state: G.state, phase: G.net.phase, matching: vis('matching'), resultHidden: !vis('raceOver') || vis('matching') };
+  log(`again: state=${again.state} net=${again.phase} matching screen=${again.matching}`);
+  pass = again.state === 'matching' && again.phase === 'queue' && again.matching && pass;
+  pass = (await playOneMatch('match 2')) && pass;
+
+  // Progress reset erases the server record (profile, name claim, rankings).
+  await G.net.submitScore('pid-ui-test-0000', 'Tester', 42);
+  const ledger = env.LEDGER.get(env.LEDGER.idFromName('global')).o;
+  const before = !!(await ledger.ctx.storage.get('p:pid-ui-test-0000')), boardBefore = (await ledger.top('floor', 'pid-ui-test-0000')).top.length;
+  G.toMenu(false);
+  doc.getElementById('btnResetYes').click();
+  await flush(); await wait(50); await flush();
+  const after = await ledger.ctx.storage.get('p:pid-ui-test-0000');
+  const name = await ledger.ctx.storage.get('n:tester');
+  const boardAfter = (await ledger.top('floor', 'pid-ui-test-0000')).top.length;
+  const local = S.Save.data;
+  log(`reset: server record ${before}→${!!after}, name claim ${name ? 'kept' : 'released'}, floor board ${boardBefore}→${boardAfter} | local casualWins ${local.casualWins} rp ${local.rp} pending ${local.forgetPending} | toast "${doc.getElementById('toast').textContent}"`);
+  pass = before && !after && !name && boardBefore === 1 && boardAfter === 0 && !local.forgetPending && local.casualWins === 0 && pass;
+} catch (e) {
+  pass = false;
+  log('EXCEPTION ' + e.stack);
+}
+localStorage.clear();
+log(`\n${pass ? 'ALL PASS' : 'FAILED'}`);
+window.__done = pass;
+</script>

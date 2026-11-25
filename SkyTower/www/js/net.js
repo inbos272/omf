@@ -30,6 +30,7 @@
       this.rws = null;
       this.slot = -1;
       this.host = -1;
+      this.startAt = 0;
       this.roster = [];
       this.snaps = {};
       this.offset = 0;
@@ -100,6 +101,24 @@
         return !!(r && r.ok);
       } catch (e) {
         return false;
+      }
+    }
+
+    // Erase this device's record on the server (progress reset): 'ok' | 'outdated' | 'offline'
+    async forget(pid) {
+      if (!this.configured) return 'offline';
+      try {
+        const r = await this._timed(this.base() + '/forget', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pid }),
+        });
+        if (!r) return 'offline';
+        if (r.status === 404) return 'outdated';
+        const j = await r.json().catch(() => null);
+        return j && j.ok === true ? 'ok' : j && j.ok === false ? 'offline' : 'outdated';
+      } catch (e) {
+        return 'offline';
       }
     }
 

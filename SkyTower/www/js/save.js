@@ -9,6 +9,7 @@
     nick: '', pid: '', casualWins: 0, rp: 0, tier: 'bronze', // online numbers are a cache of the server's
     nickChosen: false, nickOk: false, // picked by the player / confirmed unique by the server
     placed: false, placeN: 0,         // ranked placement matches
+    forgetPending: false,             // a progress reset still has to erase the server record
     skins: ['default'], themes: ['classic'], skin: 'default', theme: 'classic',
     claimed: [], seen: {},
     daily: { last: '', streak: 0 }, tickets: { elev30: 0, revive: 0 },
@@ -88,9 +89,13 @@
     reset() {
       const old = this.data;
       this.data = defaults();
-      // Progress reset, not the language, name or online identity (rank lives on the server).
-      // The daily calendar stays too, so a reset can't be used to claim today's gift twice.
-      for (const k of ['settings', 'lang', 'nick', 'pid', 'casualWins', 'rp', 'tier', 'daily', 'adEvery', 'nickChosen', 'nickOk', 'placed', 'placeN']) this.data[k] = old[k];
+      // Progress reset keeps the language, settings and chosen name. The online record (rank,
+      // wins, rankings, hall of fame, the name's claim) is erased on the server too: the game asks
+      // the server to forget this device (forgetPending, retried until it succeeds).
+      // The daily calendar stays, so a reset can't be used to claim today's gift twice.
+      for (const k of ['settings', 'lang', 'nick', 'pid', 'daily', 'adEvery', 'nickChosen']) this.data[k] = old[k];
+      this.data.nickOk = false;    // the name is released with the record; claimed again later
+      this.data.forgetPending = true;
       this.save();
     },
   };

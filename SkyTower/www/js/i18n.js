@@ -119,7 +119,9 @@
   a('set.reset', '진행 데이터 초기화', 'Reset progress', '進行データを初期化', '重置进度', 'Borrar progreso');
   a('set.local', '모든 데이터는 이 기기에만 저장됩니다.', 'All data stays on this device.', 'データはこの端末にのみ保存されます。', '所有数据仅保存在本设备上。', 'Los datos se guardan solo en este dispositivo.');
   a('confirm.title', '정말 초기화할까요?', 'Reset everything?', '本当に初期化しますか？', '确定要重置吗？', '¿Borrar todo?');
-  a('confirm.text', '코인, 최고 기록, 잠금 해제한 스킨과 테마가 모두 삭제되며 되돌릴 수 없습니다.', 'Coins, records, skins and themes will be deleted. This can\'t be undone.', 'コイン・記録・スキン・テーマがすべて消え、元に戻せません。', '金币、纪录、皮肤和主题都会被删除，且无法恢复。', 'Se borrarán monedas, récords, aspectos y temas. No se puede deshacer.');
+  a('confirm.text', '코인, 최고 기록, 잠금 해제한 스킨과 테마가 모두 삭제돼요. 서버의 랭킹·랭크·명예의 전당 기록도 함께 지워지며 되돌릴 수 없습니다.', 'Coins, records, skins and themes will be deleted, along with your rankings, rank and Hall of Fame entry on the server. This can\'t be undone.', 'コイン・記録・スキン・テーマに加え、サーバーのランキング・ランク・殿堂の記録も消え、元に戻せません。', '金币、纪录、皮肤和主题，以及服务器上的排行榜、段位和名人堂记录都会被删除，且无法恢复。', 'Se borrarán monedas, récords, aspectos y temas, y también tus clasificaciones, rango y Salón de la fama en el servidor. No se puede deshacer.');
+  a('reset.done', '서버 기록까지 모두 지웠어요', 'Your server records were erased too', 'サーバーの記録も消去しました', '服务器记录也已清除', 'También se borraron tus registros del servidor');
+  a('reset.pending', '서버 기록은 연결되면 지울게요', 'Server records will be erased once online', 'サーバーの記録は接続時に消去します', '联网后将清除服务器记录', 'Los registros del servidor se borrarán al conectarte');
   a('confirm.yes', '초기화', 'Reset', '初期化', '重置', 'Borrar');
   a('confirm.no', '취소', 'Cancel', 'キャンセル', '取消', 'Cancelar');
   a('fatal.title', '이 기기에서는 실행할 수 없어요', 'This device can\'t run the game', 'この端末では起動できません', '此设备无法运行游戏', 'Este dispositivo no puede ejecutar el juego');
@@ -187,8 +189,8 @@
   a('elev.title', '엘리베이터', 'Elevator', 'エレベーター', '电梯', 'Ascensor');
   a('elev.sub', '코인을 내고 높은 층에서 시작해요. 층수 보너스는 도착한 층부터 쌓여요.', 'Pay coins to start higher up. Floor bonus counts from where you arrive.', 'コインを払って高い階から開始。階数ボーナスは到着階から加算。', '花费金币从更高楼层开始。楼层奖励从到达楼层起计算。', 'Paga para empezar más arriba. El bono de pisos cuenta desde la llegada.');
   a('elev.arrive', '{f}층 도착!', 'Arrived at floor {f}!', '{f}階に到着！', '到达{f}层！', '¡Llegaste al piso {f}!');
-  a('elev.ticket', '이용권으로 30층 ({n}장)', 'Floor 30 with a pass ({n})', 'チケットで30階（{n}枚）', '用电梯券去30层（{n}张）', 'Piso 30 con pase ({n})');
-  a('elev.ad', '광고 보고 30층', 'Watch an ad: floor 30', '広告を見て30階へ', '看广告去30层', 'Mira un anuncio: piso 30');
+  a('elev.ticket', '이용권으로 {f}층 ({n}장)', 'Floor {f} with a pass ({n})', 'チケットで{f}階（{n}枚）', '用电梯券去{f}层（{n}张）', 'Piso {f} con pase ({n})');
+  a('elev.ad', '광고 보고 {f}층', 'Watch an ad: floor {f}', '広告を見て{f}階へ', '看广告去{f}层', 'Mira un anuncio: piso {f}');
   a('menu.tag', '용암보다 빠르게!', 'Outclimb the lava!', '溶岩より速く！', '比熔岩更快！', '¡Más rápido que la lava!');
   a('env.hell', '지옥', 'Inferno', '地獄', '地狱', 'Infierno');
   a('env.heaven', '천국', 'Heaven', '天国', '天堂', 'Cielo');
@@ -231,10 +233,10 @@
   a('daily.claim', '받기', 'Claim', '受け取る', '领取', 'Reclamar');
   a('daily.claimed', '내일 또 만나요!', 'See you tomorrow!', 'また明日！', '明天见！', '¡Hasta mañana!');
   a('daily.coins', '코인 {n}', '{n} coins', 'コイン{n}', '金币{n}', '{n} monedas');
-  a('daily.elev', '30층 이용권 ×{n}', 'Floor-30 pass ×{n}', '30階チケット×{n}', '30层电梯券×{n}', 'Pase piso 30 ×{n}');
+  a('daily.elev', '{f}층 이용권 ×{n}', 'Floor-{f} pass ×{n}', '{f}階チケット×{n}', '{f}层电梯券×{n}', 'Pase piso {f} ×{n}');
   a('daily.revive', '부활권 ×{n}', 'Revive pass ×{n}', '復活チケット×{n}', '复活券×{n}', 'Pase revivir ×{n}');
   a('daily.got', '{items} 받았어요!', 'Got {items}!', '{items}をゲット！', '获得{items}！', '¡Conseguiste {items}!');
-  a('daily.have', '🛗 30층 이용권 {e}장 · 🎟️ 부활권 {r}장', '🛗 Floor-30 passes {e} · 🎟️ Revive passes {r}', '🛗 30階チケット{e}枚・🎟️ 復活チケット{r}枚', '🛗 30层电梯券{e}张 · 🎟️ 复活券{r}张', '🛗 Pases piso 30: {e} · 🎟️ Pases revivir: {r}');
+  a('daily.have', '🛗 {f}층 이용권 {e}장 · 🎟️ 부활권 {r}장', '🛗 Floor-{f} passes {e} · 🎟️ Revive passes {r}', '🛗 {f}階チケット{e}枚・🎟️ 復活チケット{r}枚', '🛗 {f}层电梯券{e}张 · 🎟️ 复活券{r}张', '🛗 Pases piso {f}: {e} · 🎟️ Pases revivir: {r}');
 
   // ---- ranking ----
   a('rank.title', '랭킹', 'Rankings', 'ランキング', '排行榜', 'Clasificación');
@@ -334,6 +336,12 @@
     return s;
   };
   S.fl = (n) => S.t('fmt.floor', { n });
+  // Short numbers for tight spots (HUD): full digits up to 999,999, then 123.4만 / 1.2M style.
+  S.compact = (n) => {
+    if (n < 1e6) return n.toLocaleString();
+    try { return new Intl.NumberFormat(S.lang, { notation: 'compact', maximumFractionDigits: 1 }).format(n); }
+    catch (e) { return (Math.round(n / 1e5) / 10) + 'M'; }
+  };
   S.rankText = (r) => S.t('race.rank', { r, o: ORD(r) });
   S.nameOf = (kind, item) => S.t(kind + '.' + item.id);
   S.abName = (id) => (id ? S.t('ab.' + id) : S.t('ab.none'));

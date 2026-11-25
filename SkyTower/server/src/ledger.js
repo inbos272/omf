@@ -39,6 +39,10 @@ export class Ledger {
       const res = body ? await this.score(body) : { ok: false };
       return Response.json(res, { status: res.ok ? 200 : 400 });
     }
+    if (url.pathname === '/forget' && req.method === 'POST') {
+      const body = await req.json().catch(() => null);
+      return Response.json(body ? await this.forget(body.pid) : { ok: false });
+    }
     if (url.pathname === '/nick' && req.method === 'POST') {
       const body = await req.json().catch(() => null);
       return Response.json(body ? await this.nick(body) : { ok: false, code: 'invalid' });
@@ -198,6 +202,26 @@ export class Ledger {
     hof = Object.values(byPid).sort((a, b) => a.t - b.t).slice(0, HOF_MAX);
     await this.ctx.storage.put('hof', hof);
     return hof;
+  }
+
+  // A player reset their progress in the game: erase everything the server knows about them —
+  // profile, rank, nickname claim, leaderboard rows and hall-of-fame entry. Only the device that
+  // holds the (secret, random) id can ask for this.
+  async forget(pid) {
+    if (!validPid(pid)) return { ok: false };
+    const stored = await this.ctx.storage.get('p:' + pid);
+    if (stored && stored.nickSet) {
+      const key = 'n:' + nameKey(stored.name);
+      if ((await this.ctx.storage.get(key)) === pid) await this.ctx.storage.delete(key);
+    }
+    const p = { pid };
+    await this.board('floor', p, 0);
+    await this.board('rp', p, 0);
+    const hof = await this.hallOfFame();
+    const i = hof.findIndex((e) => e.pid === pid);
+    if (i >= 0) { hof.splice(i, 1); await this.ctx.storage.put('hof', hof); }
+    await this.ctx.storage.delete('p:' + pid);
+    return { ok: true, existed: !!stored };
   }
 
   // ---- admin ----

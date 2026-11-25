@@ -60,6 +60,15 @@ export default {
       return new Response(res.body, { status: res.status, headers: { ...CORS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
     }
 
+    // Progress reset in the game: POST /forget {pid} erases that player's server record.
+    if (url.pathname === '/forget' && req.method === 'POST') {
+      const body = await req.text();
+      if (body.length > 512) return new Response('too large', { status: 413, headers: CORS });
+      const stub = env.LEDGER.get(env.LEDGER.idFromName('global'));
+      const res = await stub.fetch('https://ledger/forget', { method: 'POST', body, headers: { 'Content-Type': 'application/json' } });
+      return new Response(res.body, { status: res.status, headers: { ...CORS, 'Content-Type': 'application/json' } });
+    }
+
     // Nickname registry: POST /nick {pid, name} → {ok, name} | {ok:false, code:'taken'|'invalid'}
     if (url.pathname === '/nick' && req.method === 'POST') {
       const body = await req.text();

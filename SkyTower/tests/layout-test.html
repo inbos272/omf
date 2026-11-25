@@ -1,0 +1,188 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Layout tests</title>
+<style>body { font: 13px monospace; margin: 8px; } iframe { border: 0; position: absolute; left: -10000px; top: 0; }</style>
+<pre id="out">running…</pre>
+<script>
+// Opens the real game (muted, no server) in frames of many device sizes, shows every screen and
+// dialog with long values (big coin counts, high floors, long names), and reports anything that
+// sticks out of the screen, text that does not fit its button, overlapping HUD pieces, and
+// controls that cannot be reached.
+const SIZES = [
+  [280, 653, 'Fold cover'], [320, 568, 'iPhone SE 1'], [360, 640, 'small Android'], [360, 780, 'tall Android'],
+  [375, 667, 'iPhone 8'], [390, 844, 'iPhone 14'], [412, 915, 'Pixel / Galaxy'], [430, 932, 'iPhone Pro Max'],
+  [768, 1024, 'iPad'], [820, 1180, 'iPad Air'], [1024, 768, 'iPad landscape'], [1280, 800, 'laptop'], [1920, 1080, 'desktop'],
+  [568, 320, 'SE landscape'], [640, 360, 'Android landscape'], [844, 390, 'iPhone landscape'], [915, 412, 'Galaxy landscape'],
+];
+const LANGS = (new URLSearchParams(location.search).get('lang') || 'ko').split(',');
+const out = [];
+const log = (s) => { out.push(s); document.getElementById('out').textContent = out.join('\n'); };
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function seed(lang) {
+  const save = {
+    v: 1, coins: 12345678, best: 5123, runs: 40, lang, raceWins: 12, racePlays: 30, nick: 'ＷＷＷＷＷＷＷＷＷＷＷＷ', pid: 'pid-layout-0000',
+    casualWins: 9, rp: 2730, tier: 'master', nickChosen: true, nickOk: true, placed: true, placeN: 5,
+    skins: ['default'], themes: ['classic'], skin: 'default', theme: 'classic', claimed: [], seen: { 1: 1, 2: 1, 3: 1, 4: 1, 5: 1 },
+    daily: { last: '2000-01-01', streak: 0 }, tickets: { elev30: 3, revive: 2 }, gamesSinceAd: 0, adEvery: 9,
+  };
+  localStorage.setItem('omf_skytower_v1', JSON.stringify(save));
+  localStorage.setItem('omf_skytower_v1_bak', JSON.stringify(save));
+}
+
+async function check(w, h, label, lang) {
+  const f = document.createElement('iframe');
+  f.style.width = w + 'px';
+  f.style.height = h + 'px';
+  f.src = '../www/index.html?mute&noserver&bot=0.0001';
+  document.body.appendChild(f);
+  await new Promise((r) => (f.onload = r));
+  await wait(150);
+  const win = f.contentWindow, doc = win.document, S = win.SKY, G = S.game;
+  G.bot = null;
+  // Measure resting layouts, not the middle of an entrance animation (banners scale up, etc.).
+  const still = doc.createElement('style');
+  still.textContent = '*, *::before, *::after { animation: none !important; transition: none !important; }';
+  doc.head.appendChild(still);
+  let T = win.performance.now();
+  const run = (n) => { for (let i = 0; i < n; i++) { T += 16.7; G.tick(T); } };
+  const problems = [];
+  const vis = (el) => {
+    if (!el) return false;
+    const cs = win.getComputedStyle(el);
+    if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 && !el.closest('.hidden');
+  };
+  const rect = (el) => el.getBoundingClientRect();
+  const name = (el) => el.id ? '#' + el.id : (el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : el.tagName.toLowerCase());
+  // Everything visible inside the given root must stay within the screen horizontally, and its
+  // text must fit (buttons and labels that are not meant to be cut with an ellipsis).
+  const audit = (what, root) => {
+    const W = win.innerWidth;
+    for (const el of root.querySelectorAll('*')) {
+      if (!vis(el) || el.closest('#tags') || el.id === 'bestTag' || el.tagName === 'svg' || el.closest('svg')) continue;
+      const r = rect(el);
+      const scroller = el.closest('.grid, .rank-list, .scroll');
+      if (!scroller && (r.right > W + 1 || r.left < -1)) problems.push(`${what}: ${name(el)} sticks out (${Math.round(r.left)}..${Math.round(r.right)} of ${W})`);
+      const cs = win.getComputedStyle(el);
+      const clipsOnPurpose = cs.textOverflow === 'ellipsis' || el.closest('.rb-name, .tag') || el.querySelector('.badge'); // the dot sits on the corner on purpose
+      if ((el.tagName === 'BUTTON' || el.matches('.chip b, .vs-text b, .elev-row b, .day span, h2')) && !clipsOnPurpose && el.scrollWidth > el.clientWidth + 2)
+        problems.push(`${what}: text overflows ${name(el)} ("${el.textContent.trim().slice(0, 20)}")`);
+    }
+  };
+  // Interactive controls in a dialog must be reachable: inside the screen, or inside something that scrolls.
+  const reachable = (what, modal) => {
+    for (const b of modal.querySelectorAll('button, input')) {
+      if (!vis(b)) continue;
+      const r = rect(b);
+      const sc = modal.scrollHeight > modal.clientHeight + 1 || b.closest('.scroll, .grid, .rank-list');
+      if (!sc && (r.bottom > win.innerHeight + 1 || r.top < -1)) problems.push(`${what}: ${name(b)} off screen (y ${Math.round(r.top)}..${Math.round(r.bottom)} of ${win.innerHeight})`);
+    }
+  };
+  const overlaps = (what, sels) => {
+    const els = sels.map((s) => doc.querySelector(s)).filter(vis);
+    for (let i = 0; i < els.length; i++) for (let j = i + 1; j < els.length; j++) {
+      const a = rect(els[i]), b = rect(els[j]);
+      const ix = Math.min(a.right, b.right) - Math.max(a.left, b.left), iy = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+      if (ix > 2 && iy > 2) problems.push(`${what}: ${name(els[i])} overlaps ${name(els[j])}`);
+    }
+  };
+  const modal = (id, open) => { open(); run(2); const m = doc.getElementById(id); audit(id, m); reachable(id, m); };
+  const close = (id) => doc.getElementById(id).classList.add('hidden');
+
+  // menu
+  G.toMenu(false); run(2);
+  audit('menu', doc.getElementById('menu'));
+  reachable('menu', doc.getElementById('menu'));
+  overlaps('menu', ['.menu-top', '.menu-stats', '.menu-actions']);
+  // solo HUD, with the elevator button, huge floor and coin numbers
+  G.startRun(); run(3);
+  G.ui.hud(5123, 12345678, 2);
+  G.ui.elevatorButton(true);
+  doc.getElementById('lavaSlow').classList.add('on');
+  run(1);
+  const HUD = ['#btnPause', '.hud-floor', '.hud-coins', '#hAbility', '#hudGoal', '#btnElev', '#lavaSlow', '.dpad', '#jumpBtn'];
+  audit('hud', doc.getElementById('hud'));
+  overlaps('hud', HUD);
+  G.ui.toast(S.t('reset.pending') + ' ' + S.t('nick.later'), 5000);
+  audit('toast', doc.getElementById('toast'));
+  // dialogs
+  modal('pause', () => G.pause());
+  close('pause'); G.state = 'play';
+  modal('elevator', () => G.ui.openElevator());
+  G.ui.closeElevator();
+  modal('revive', () => G.ui.revive({ floor: 5123, price: 128300, coinUsed: false, coinsOk: true, tickets: 2, adOk: true }));
+  close('revive');
+  modal('over', () => G.ui.gameOver({ floor: 5123, prevBest: 5000, newBest: true, picked: 12345, bonus: 9999, earned: 22344,
+    rewards: S.MILESTONES.slice(-3) }));
+  close('over');
+  // AI race HUD and result
+  G.startRace(); run(60 * 5);
+  G.ui.raceHud(G.sim.bodies.slice(), 88);
+  audit('race hud', doc.getElementById('hud'));
+  overlaps('race hud', ['#btnPause', '.hud-floor', '.hud-coins', '#hAbility', '.race-bar', '#raceBoard', '.dpad', '#jumpBtn']);
+  modal('raceOver', () => G.ui.raceOver({ reason: 'time', order: G.sim.bodies.slice(), rank: 1, rankReward: 150, picked: 99, earned: 249,
+    rp: { delta: 40, rp: 2770, tier: 'master', prevTier: 'diamond', placed: true, placeN: 5, placedNow: false } }));
+  close('raceOver');
+  G.toMenu(false); run(2);
+  modal('settings', () => G.ui.openSettings());
+  G.ui.closeSettings();
+  modal('versus', () => G.ui.versus({ server: 'outdated' }));
+  close('versus');
+  modal('matching', () => G.ui.matching('ranked', 'queue', 4, 6000));
+  close('matching');
+  modal('daily', () => G.ui.openDaily());
+  close('daily');
+  modal('nickPick', () => G.ui.showNickPick('nick.takenNow'));
+  close('nickPick');
+  modal('confirm', () => G.ui.overlay('confirm', true));
+  close('confirm');
+  G.net.baseUrl = 'https://fake';
+  G.net.fetchFn = async (u) => {
+    if (u.includes('/score')) return new win.Response('{"ok":true}');
+    const type = new URL(u).searchParams.get('type');
+    if (type === 'hof') return new win.Response(JSON.stringify({ type, top: [], need: { floor: 3000, rp: 2500 }, me: { best: 5123, peak: 2730, in: true },
+      hof: [{ name: 'ＷＷＷＷＷＷＷＷＷＷＷＷ', floor: 99999, rp: 99999, t: Date.now(), me: true }, { name: 'A', floor: 3001, rp: 0, t: 1 }] }));
+    return new win.Response(JSON.stringify({ type, top: Array.from({ length: 30 }, (_, i) => ({ name: 'ＷＷＷＷＷＷＷＷＷＷＷＷ', v: 99999 - i, me: i === 3 })), me: { v: 99999, rank: 4 } }));
+  };
+  for (const type of ['floor', 'rp', 'hof']) {
+    await G.ui.openRanking(type);
+    run(1);
+    const m = doc.getElementById('ranking');
+    audit('ranking ' + type, m);
+    reachable('ranking ' + type, m);
+  }
+  close('ranking');
+  // ad stand-in
+  doc.getElementById('adScreen').classList.remove('hidden');
+  run(1);
+  audit('ad', doc.getElementById('adScreen'));
+  reachable('ad', doc.getElementById('adScreen'));
+  doc.getElementById('adScreen').classList.add('hidden');
+  // shop
+  G.ui.openColl('shop'); run(2);
+  audit('shop', doc.getElementById('coll'));
+  reachable('shop', doc.getElementById('coll'));
+  const foot = doc.getElementById('btnCollAction');
+  if (vis(foot) && rect(foot).bottom > win.innerHeight + 1) problems.push('shop: buy button below the screen');
+  G.toMenu(false);
+  f.remove();
+  return problems;
+}
+
+(async () => {
+  let total = 0;
+  for (const lang of LANGS) {
+    seed(lang);
+    for (const [w, h, label] of SIZES) {
+      const p = await check(w, h, label, lang);
+      total += p.length;
+      log(`${p.length ? '✗' : '✓'} [${lang}] ${w}×${h} ${label}${p.length ? '\n    ' + [...new Set(p)].join('\n    ') : ''}`);
+    }
+  }
+  localStorage.clear();
+  log(`\n${total ? 'FAILED: ' + total + ' problems' : 'ALL PASS'}`);
+  window.__done = !total;
+})().catch((e) => { log('EXCEPTION ' + e.stack); window.__done = false; });
+</script>

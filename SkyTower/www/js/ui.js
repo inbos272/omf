@@ -91,6 +91,9 @@
         G.applyLoadout();
         this.refreshMenu();
         this.closeSettings();
+        // Also erase the online record (rankings, rank, wins, hall of fame). If the server can't
+        // be reached now it is retried automatically before any online play.
+        G.forgetServer().then((done) => this.toast(t(done ? 'reset.done' : 'reset.pending'), 2600));
       };
 
       const st = () => S.Save.data.settings;
@@ -254,7 +257,7 @@
     rewardParts(r) {
       const parts = [];
       if (r.coins) parts.push({ icon: '💰', text: t('daily.coins', { n: r.coins.toLocaleString() }) });
-      if (r.elev30) parts.push({ icon: '🛗', text: t('daily.elev', { n: r.elev30 }) });
+      if (r.elev30) parts.push({ icon: '🛗', text: t('daily.elev', { n: r.elev30, f: S.ELEV_FREE }) });
       if (r.revive) parts.push({ icon: '🎟️', text: t('daily.revive', { n: r.revive }) });
       return parts;
     }
@@ -279,7 +282,7 @@
       const btn = $('btnDailyClaim');
       btn.disabled = !info.can;
       btn.textContent = info.can ? t('daily.claim') : t('daily.claimed');
-      $('dailyTickets').textContent = t('daily.have', { e: d.tickets.elev30, r: d.tickets.revive });
+      $('dailyTickets').textContent = t('daily.have', { e: d.tickets.elev30, r: d.tickets.revive, f: S.ELEV_FREE });
       this.overlay('daily', true);
     }
 
@@ -440,8 +443,9 @@
         b.onclick = () => { this.closeElevator(); fn(); };
         list.appendChild(b);
       };
-      if (d.tickets.elev30 > 0) special('ticket', '🎟️', t('elev.ticket', { n: d.tickets.elev30 }), () => this.G.elevator(30, 'ticket'));
-      special('btn-ad', '📺', t('elev.ad'), () => this.G.elevatorAd());
+      const f0 = S.ELEV_FREE;
+      if (d.tickets.elev30 > 0) special('ticket', '🎟️', t('elev.ticket', { n: d.tickets.elev30, f: f0 }), () => this.G.elevator(f0, 'ticket'));
+      special('btn-ad', '📺', t('elev.ad', { f: f0 }), () => this.G.elevatorAd());
       for (const e of S.ELEVATOR) {
         const b = document.createElement('button');
         b.className = 'elev-row';
@@ -540,7 +544,7 @@
         }
       }
       if (L.coins !== coins) {
-        $('hCoins').textContent = coins.toLocaleString();
+        $('hCoins').textContent = S.compact(coins); // 1,234만 / 12.3M once it gets long
         L.coins = coins;
       }
       const ab = this.abilityId;

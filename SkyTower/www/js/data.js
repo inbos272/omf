@@ -256,10 +256,12 @@
   S.aiLevelForRp = (rp) => Math.min(8, Math.floor(rp / 300) + 1);
 
   // Elevator: pay to start a solo run higher up.
+  // Every 40 floors up to 240. The first stop can also be reached free with a pass or an ad.
   S.ELEVATOR = [
-    { floor: 30, price: 1500 }, { floor: 60, price: 3500 }, { floor: 90, price: 6000 },
-    { floor: 120, price: 9000 }, { floor: 150, price: 13000 }, { floor: 180, price: 18000 },
+    { floor: 40, price: 800 }, { floor: 80, price: 1800 }, { floor: 120, price: 3200 },
+    { floor: 160, price: 5000 }, { floor: 200, price: 7500 }, { floor: 240, price: 10500 },
   ];
+  S.ELEV_FREE = S.ELEVATOR[0].floor; // pass / ad destination (the save still calls the pass "elev30")
 
   // Online ranks. Placement 1st..5th moves rank points; ranked unlocks after 5 casual wins.
   S.TIERS = [

@@ -363,6 +363,9 @@ o=vec4(c,1.);}`;
     _init() {
       const gl = (this.gl = this.canvas.getContext('webgl2', { antialias: false, alpha: false, depth: false, stencil: false, powerPreference: 'high-performance' }));
       if (!gl) return false;
+      // Always plain sRGB, so wide-gamut phone screens show the same colors as everything else.
+      try { if ('drawingBufferColorSpace' in gl) gl.drawingBufferColorSpace = 'srgb'; } catch (e) { /* older browsers */ }
+      try { if ('unpackColorSpace' in gl) gl.unpackColorSpace = 'srgb'; } catch (e) { /* older browsers */ }
       this.P = {
         rigid: this._prog(RIGID_VS, RIGID_FS), plat: this._prog(PLAT_VS, PLAT_FS), shadow: this._prog(SHADOW_VS, SHADOW_FS),
         col: this._prog(COL_VS, COL_FS), sky: this._prog(SKY_VS, SKY_FS), lava: this._prog(LAVA_VS, LAVA_FS),

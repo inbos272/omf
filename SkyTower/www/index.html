@@ -6,7 +6,11 @@
 <title>Sky Tower</title>
 <meta name="description" content="Sky Tower — climb an endless tower, outrun the rising lava, and race rivals. Works offline.">
 <meta name="theme-color" content="#1f78ea">
-<meta name="color-scheme" content="light">
+<!-- "only light": phones' automatic dark mode (Chrome, Samsung Internet) must not recolor the game -->
+<meta name="color-scheme" content="only light">
+<meta name="darkreader-lock">
+<meta name="format-detection" content="telephone=no">
+<meta name="supported-color-schemes" content="light only">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -83,7 +87,6 @@
     <div id="lavaSlow" data-i18n="hud.lavaSlow"></div>
     <div id="banner"><small id="bSmall"></small><b id="bBig"></b><span id="bSub"></span></div>
     <div id="pop"></div>
-    <div id="toast"></div>
     <div id="countdown"></div>
   </section>
 
@@ -293,6 +296,9 @@
       <button id="btnAdClose" class="btn btn-play"></button>
     </div>
   </div>
+
+  <!-- above every screen and modal, so messages show on menus too -->
+  <div id="toast"></div>
 
   <div id="fatal" class="hidden"><div><h2 data-i18n="fatal.title"></h2><p data-i18n="fatal.text"></p></div></div>
 </div>

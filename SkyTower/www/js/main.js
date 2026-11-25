@@ -96,7 +96,7 @@
     const d = S.Save.data, name = S.cleanNick(raw);
     if (!name) return 'empty';
     if (name === d.nick && d.nickOk) { d.nickChosen = true; S.Save.save(); return 'ok'; }
-    const res = await net.claimNick(d.pid, name);
+    const res = (await G.forgetServer()) ? await net.claimNick(d.pid, name) : 'offline';
     if (res === 'taken' || res === 'invalid') return res;
     d.nick = name;
     d.nickChosen = true;
@@ -105,8 +105,22 @@
     return d.nickOk ? 'ok' : 'local';
   };
 
+  // After a progress reset the server record must be erased before anything new is sent there.
+  // true once done (or nothing to do); false while the server can't be reached.
+  G.forgetServer = async () => {
+    const d = S.Save.data;
+    if (!d.forgetPending) return true;
+    if (!net.configured) return false;
+    const res = await net.forget(d.pid);
+    if (res !== 'ok') return false;
+    d.forgetPending = false;
+    S.Save.save();
+    return true;
+  };
+
   // Make sure the current name is registered; false when someone else owns it (asks for a new one).
   async function ensureNick() {
+    if (!(await G.forgetServer())) { ui.toast(t('reset.pending'), 2600); return false; }
     const d = S.Save.data;
     if (d.nickOk || !net.configured) return true;
     const res = await net.claimNick(d.pid, d.nick);
@@ -277,7 +291,7 @@
     const e = S.ELEVATOR.find((x) => x.floor === f), d = S.Save.data;
     if (!e || !canElevate()) return;
     if (via === 'ticket') {
-      if (f !== 30 || d.tickets.elev30 < 1) return;
+      if (f !== S.ELEV_FREE || d.tickets.elev30 < 1) return;
       d.tickets.elev30--;
     } else if (via !== 'free') {
       if (d.coins < e.price) return;
@@ -300,10 +314,10 @@
     if (!canElevate()) return;
     input.enabled = false;
     input.reset();
-    const ok = await S.Ads.rewarded('elevator_30');
+    const ok = await S.Ads.rewarded('elevator_free');
     input.enabled = G.state === 'play';
     if (!ok) { ui.toast(t('ad.fail'), 1800); return; }
-    G.elevator(30, 'free');
+    G.elevator(S.ELEV_FREE, 'free');
   };
 
   function elevatorDone() {
@@ -333,6 +347,7 @@
     if (!net.configured) return;
     serverState = await net.health();
     if (serverState === 'ok') {
+      await G.forgetServer();
       const p = await net.profile(S.Save.data.pid);
       if (p) syncProfile(p);
     }
@@ -359,6 +374,13 @@
     const lo = loadout(), d = S.Save.data;
     G.mode = mode;
     G.state = 'matching';
+    // Forget the previous match: its end message would otherwise be read again by the loop,
+    // re-showing the old result and closing this new search ("한 판 더" did nothing).
+    G.endMsg = null;
+    G.netLost = false;
+    G.sentResult = false;
+    scene.follow = null;
+    ui.spectate(null);
     ui.matching(mode, 'queue', 1, 0);
     net.find(mode, { pid: d.pid, name: d.nick, skin: lo.skin.id, ab: lo.ab || '' }, {
       queue: (n, fillIn) => { if (G.state === 'matching') ui.matching(mode, 'queue', n, fillIn); },
@@ -607,11 +629,12 @@
   // ---------- rankings ----------
   const submitBest = () => {
     const d = S.Save.data;
-    if (net.configured && d.best > 0) return net.submitScore(d.pid, d.nick, d.best);
+    if (net.configured && d.best > 0 && !d.forgetPending) return net.submitScore(d.pid, d.nick, d.best);
     return Promise.resolve(false);
   };
   G.loadRanking = async (type) => {
     if (!net.configured) return { error: t('vs.noServer') };
+    await G.forgetServer();
     await submitBest();
     const res = await net.top(type, S.Save.data.pid);
     if (res === 'outdated') return { error: t('vs.outdated') };
@@ -855,7 +878,8 @@
     let inp = idleInput;
     if (G.state === 'play') inp = G.bot ? G.bot.update(sim, C.DT) : input.poll();
 
-    const isOnline = online() && sim.online;
+    // Only while a match is actually under way (not while searching for the next one).
+    const isOnline = online() && sim.online && net.phase !== 'queue' && net.phase !== 'idle' && G.state !== 'matching';
     // (not while the host is fast-forwarding the AI: that runs ahead of the shared clock on purpose)
     if (isOnline && sim.started && G.state !== 'over' && net.ffLeft === undefined) {
       // Lava follows the shared clock, so every client sees it at the same height.
@@ -1011,9 +1035,9 @@
   else {
     ui.show('menu');
     afterLanguage(); // nickname if never chosen, then today's gift
-    // A name saved while offline gets its duplicate check now.
+    // A pending reset is finished first; then a name saved while offline gets its duplicate check.
     if (save.nickChosen && !save.nickOk && net.configured) {
-      net.claimNick(save.pid, save.nick).then((res) => {
+      G.forgetServer().then((done) => (done ? net.claimNick(save.pid, save.nick) : 'offline')).then((res) => {
         if (res === 'ok') { S.Save.data.nickOk = true; S.Save.save(); }
         else if (res === 'taken' && G.state === 'menu') ui.showNickPick('nick.takenNow');
       });
